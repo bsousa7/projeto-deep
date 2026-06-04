@@ -1,0 +1,46 @@
+# Dados brutos (podem ser grandes; recriar via script de coleta)
+data/raw/*.parquet
+data/raw/*.json
+data/raw/*.csv
+
+# Dados intermediários e processados (recriar via pipeline)
+data/interim/
+data/processed/
+
+# Ambiente virtual
+.venv/
+venv/
+env/
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# Segredos e variáveis de ambiente
+.env
+.env.*
+*.key
+secrets.json
+
+# Jupyter
+.ipynb_checkpoints/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Resultados gerados (recriar via pipeline)
+resultados/figuras/
+resultados/metricas.json
+
+# Sistema operacional
+.DS_Store
+Thumbs.db
