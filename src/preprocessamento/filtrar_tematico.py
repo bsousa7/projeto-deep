@@ -135,9 +135,9 @@ def filtrar_acordaos(arquivo_csv: Path, col_texto: str = "sumario") -> pd.DataFr
     colunas_disponiveis = inspecionar_colunas(arquivo_csv)
     usecols = [c for c in COLUNAS_BASE if c in colunas_disponiveis]
 
-    # Incluir urlArquivoPDF se disponível (pode ser útil para baixar PDFs depois)
-    if "urlArquivoPDF" in colunas_disponiveis:
-        usecols.append("urlArquivoPDF")
+    for col_extra in ("urlArquivoPDF", "texto_voto_simulado"):
+        if col_extra in colunas_disponiveis:
+            usecols.append(col_extra)
 
     logger.info("Carregando colunas: %s", usecols)
     df = pd.read_csv(
@@ -146,7 +146,6 @@ def filtrar_acordaos(arquivo_csv: Path, col_texto: str = "sumario") -> pd.DataFr
         encoding="utf-8",
         sep=None,
         engine="python",
-        low_memory=False,
     )
     logger.info("Carregados %d acórdãos do arquivo %s.", len(df), arquivo_csv.name)
     logger.info("Uso de memória: %.1f MB", df.memory_usage(deep=True).sum() / 1e6)

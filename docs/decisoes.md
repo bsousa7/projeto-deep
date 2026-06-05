@@ -63,30 +63,30 @@
 
 ---
 
-## D-05 — Campo de label usado *(a preencher após inspecionar CSV real)*
+## D-05 — Campo de label usado
 
-**Data:** _(preencher na Etapa 2)_
+**Data:** 05/06/2026
 **Decisão:** Qual campo do CSV usar como rótulo de desfecho?
 **Alternativas:**
-- A) Campo `tipo` (se contiver "Irregular"/"Regular")
-- B) Campo `situacao` (se disponível)
-- C) Regex no `sumario`: `r"contas\s+(irregulares|regulares\s+com\s+ressalva|regulares)"`
+- A) Campo `tipo` (contém apenas "Acórdão" — sem discriminação de desfecho)
+- B) **Campo `situacao`** (contém "Irregular", "Regular com Ressalva", "Regular")
+- C) Regex no `sumario` (fallback — cobertura parcial)
 
-**Escolha:** _(preencher após `python src/preprocessamento/filtrar_tematico.py --inspecionar`)_
-**Motivo:** _(preencher)_
+**Escolha:** **Campo `situacao` (opção B)**
+**Motivo:** Inspeção do CSV (Etapa 2) confirmou que `situacao` contém o desfecho estruturado com 100% de preenchimento. O campo `tipo` contém apenas "Acórdão" (sem discriminação). O filtro `filtrar_tematico.py` prioriza `situacao`, com fallback automático para regex no `sumario`.
 
 ---
 
-## D-06 — Campo de texto para o Transformer *(a preencher após inspecionar CSV real)*
+## D-06 — Campo de texto para o Transformer
 
-**Data:** _(preencher na Etapa 2)_
+**Data:** 05/06/2026
 **Decisão:** Qual campo de texto usar como entrada do LegalBert-pt?
 **Alternativas:**
-- A) Campo `sumario` — disponível no CSV, mais curto, MVP válido
-- B) Campo `voto` extraído de PDF via `pdfplumber` — mais discriminativo, maior custo
+- A) **Campo `sumario`** — disponível no CSV, cobre 100% dos registros, MVP válido
+- B) Campo `voto` extraído de PDF via `pdfplumber` — mais discriminativo, maior custo operacional
 
-**Escolha:** _(preencher após verificar se CSV contém campo de texto integral)_
-**Motivo:** _(preencher)_
+**Escolha:** **Campo `sumario` (opção A) — MVP**
+**Motivo:** O CSV do TCU não inclui o texto integral do Voto como coluna estruturada. Extrair o `voto` via `pdfplumber` exigiria baixar individualmente os PDFs de 2.000–4.000 acórdãos filtrados (~8–16 GB), inviável no prazo atual. O `sumario` é suficiente para o MVP. A extração de PDFs pode ser implementada como extensão futura (Estágio 2b).
 
 ---
 

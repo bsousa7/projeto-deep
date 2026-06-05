@@ -41,9 +41,8 @@ def construir_pipeline(
             max_iter=1000,
             C=1.0,
             solver="lbfgs",
-            multi_class="multinomial",
             random_state=seed,
-            n_jobs=-1,
+            n_jobs=None,
         )
     elif modelo == "svm":
         clf = LinearSVC(max_iter=2000, C=1.0, random_state=seed)

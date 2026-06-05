@@ -1,0 +1,9 @@
+{
+  "baseline": {
+    "f1_macro": 1.0,
+    "precisao_macro": 1.0,
+    "revocacao_macro": 1.0,
+    "acuracia": 1.0
+  },
+  "modelo": "TF-IDF + LogisticRegression"
+}
