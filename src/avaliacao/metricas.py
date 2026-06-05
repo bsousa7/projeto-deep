@@ -1,4 +1,4 @@
-"""Avaliação comparativa dos modelos: métricas, matrizes de confusão e mapa geográfico."""
+"""Avaliação comparativa dos modelos: métricas, matrizes de confusão e LIME."""
 
 import json
 from pathlib import Path
@@ -67,8 +67,8 @@ def plotar_matriz_confusao(
     Args:
         y_true: Rótulos verdadeiros.
         y_pred: Rótulos preditos.
-        classes: Lista de nomes das classes na ordem dos rótulos.
-        nome_arquivo: Nome do arquivo de saída (salvo em resultados/figuras/).
+        classes: Lista de nomes das classes.
+        nome_arquivo: Nome do arquivo de saída em resultados/figuras/.
         titulo: Título do gráfico.
 
     Returns:
@@ -77,7 +77,7 @@ def plotar_matriz_confusao(
     FIGURAS.mkdir(parents=True, exist_ok=True)
     cm = confusion_matrix(y_true, y_pred, labels=classes)
 
-    fig, ax = plt.subplots(figsize=(max(8, len(classes)), max(6, len(classes) - 1)))
+    fig, ax = plt.subplots(figsize=(max(6, len(classes) * 2), max(5, len(classes) * 1.5)))
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=classes)
     disp.plot(ax=ax, cmap="Blues", colorbar=False, xticks_rotation=45)
     ax.set_title(titulo)
@@ -101,14 +101,14 @@ def comparar_modelos(
     Args:
         y_test: Rótulos verdadeiros do conjunto de teste.
         pred_baseline: Predições do baseline (TF-IDF + linear).
-        pred_transformer: Predições do Transformer (BERTimbau).
+        pred_transformer: Predições do Transformer (LegalBert-pt).
         classes: Lista de classes.
 
     Returns:
         Dicionário com métricas de baseline, transformer e ganho absoluto.
     """
     met_base = calcular_metricas(y_test, pred_baseline, "Baseline (TF-IDF + LogReg)")
-    met_transformer = calcular_metricas(y_test, pred_transformer, "Transformer (BERTimbau)")
+    met_transformer = calcular_metricas(y_test, pred_transformer, "LegalBert-pt (head+tail)")
 
     ganho = round(met_transformer["f1_macro"] - met_base["f1_macro"], 4)
     print(f"\nGanho F1-macro (Transformer − Baseline): {ganho:+.4f}")
@@ -116,12 +116,12 @@ def comparar_modelos(
     plotar_matriz_confusao(
         y_test, pred_baseline, classes,
         nome_arquivo="matriz_confusao_baseline.png",
-        titulo="Matriz de Confusão — Baseline",
+        titulo="Matriz de Confusão — Baseline (TF-IDF + LogReg)",
     )
     plotar_matriz_confusao(
         y_test, pred_transformer, classes,
         nome_arquivo="matriz_confusao_transformer.png",
-        titulo="Matriz de Confusão — Transformer",
+        titulo="Matriz de Confusão — LegalBert-pt (head+tail)",
     )
 
     resultado = {
@@ -134,7 +134,6 @@ def comparar_modelos(
     with open(RESULTADOS / "metricas.json", "w", encoding="utf-8") as f:
         json.dump(resultado, f, ensure_ascii=False, indent=2)
     print(f"Métricas consolidadas salvas em {RESULTADOS / 'metricas.json'}")
-
     return resultado
 
 
@@ -144,7 +143,7 @@ def plotar_f1_por_classe(
     pred_transformer: np.ndarray,
     classes: list[str],
 ) -> Path:
-    """Gráfico de barras comparando F1 por classe entre baseline e Transformer.
+    """Gráfico de barras comparando F1 por classe entre baseline e LegalBert-pt.
 
     Returns:
         Caminho do arquivo salvo.
@@ -157,13 +156,13 @@ def plotar_f1_por_classe(
     x = np.arange(len(classes))
     largura = 0.35
 
-    fig, ax = plt.subplots(figsize=(max(10, len(classes) * 1.2), 5))
-    ax.bar(x - largura / 2, f1_base, largura, label="Baseline")
-    ax.bar(x + largura / 2, f1_trans, largura, label="Transformer")
+    fig, ax = plt.subplots(figsize=(max(8, len(classes) * 2), 5))
+    ax.bar(x - largura / 2, f1_base, largura, label="Baseline (TF-IDF)")
+    ax.bar(x + largura / 2, f1_trans, largura, label="LegalBert-pt")
     ax.set_xticks(x)
-    ax.set_xticklabels(classes, rotation=45, ha="right")
+    ax.set_xticklabels(classes, rotation=30, ha="right")
     ax.set_ylabel("F1 por classe")
-    ax.set_title("Comparação de F1 por Classe")
+    ax.set_title("Comparação de F1 por Classe — Baseline vs. LegalBert-pt")
     ax.legend()
     ax.set_ylim(0, 1.05)
     plt.tight_layout()
@@ -175,55 +174,60 @@ def plotar_f1_por_classe(
     return caminho
 
 
-def gerar_mapa_calor(
-    df: pd.DataFrame,
-    col_categoria: str = "categoria_prevista",
-    col_lat: str = "latitude",
-    col_lon: str = "longitude",
-    nome_arquivo: str = "mapa_demandas.html",
+def explicar_com_lime(
+    pipeline_baseline,
+    textos_teste: list[str],
+    classes: list[str],
+    num_features: int = 10,
+    num_amostras: int = 5,
+    nome_arquivo: str = "lime_explicabilidade.png",
 ) -> Path:
-    """Gera mapa de calor de demandas por categoria e localização geográfica.
+    """Gera plot LIME mostrando tokens mais preditivos de condenação (Irregular).
 
-    Requer colunas de latitude e longitude no DataFrame.
+    Usa o pipeline baseline (TF-IDF + LogReg) para interpretabilidade, pois o
+    LIME requer predições rápidas para gerar perturbações.
 
     Args:
-        df: DataFrame com predições e coordenadas.
-        col_categoria: Coluna com a categoria predita.
-        col_lat: Coluna de latitude.
-        col_lon: Coluna de longitude.
-        nome_arquivo: Nome do arquivo HTML de saída.
+        pipeline_baseline: Pipeline sklearn treinado (TF-IDF + classificador).
+        textos_teste: Lista de textos do conjunto de teste.
+        classes: Lista de nomes das classes (ordem igual ao LabelEncoder).
+        num_features: Número de features (tokens) a destacar por amostra.
+        num_amostras: Número de acórdãos a explicar.
+        nome_arquivo: Nome do arquivo de saída em resultados/figuras/.
 
     Returns:
         Caminho do arquivo salvo.
     """
-    import folium
-    from folium.plugins import HeatMap
+    from lime.lime_text import LimeTextExplainer
 
     FIGURAS.mkdir(parents=True, exist_ok=True)
-    df_geo = df[[col_lat, col_lon, col_categoria]].dropna()
+    explainer = LimeTextExplainer(class_names=classes)
 
-    if df_geo.empty:
-        raise ValueError("DataFrame sem coordenadas válidas para o mapa.")
+    fig, axes = plt.subplots(num_amostras, 1, figsize=(12, num_amostras * 3))
+    if num_amostras == 1:
+        axes = [axes]
 
-    centro = [df_geo[col_lat].mean(), df_geo[col_lon].mean()]
-    mapa = folium.Map(location=centro, zoom_start=12)
-
-    categorias = df_geo[col_categoria].unique()
-    cores = plt.cm.get_cmap("tab10", len(categorias))
-
-    for i, categoria in enumerate(categorias):
-        subset = df_geo[df_geo[col_categoria] == categoria]
-        pontos = subset[[col_lat, col_lon]].values.tolist()
-        cor = "#{:02x}{:02x}{:02x}".format(
-            *[int(c * 255) for c in cores(i)[:3]]
+    for i, texto in enumerate(textos_teste[:num_amostras]):
+        exp = explainer.explain_instance(
+            texto,
+            pipeline_baseline.predict_proba,
+            num_features=num_features,
+            labels=[classes.index("Irregular")] if "Irregular" in classes else [0],
         )
-        feature_group = folium.FeatureGroup(name=categoria)
-        HeatMap(pontos, radius=15, blur=10).add_to(feature_group)
-        feature_group.add_to(mapa)
+        label_idx = classes.index("Irregular") if "Irregular" in classes else 0
+        features = exp.as_list(label=label_idx)
+        tokens = [f[0] for f in features]
+        pesos = [f[1] for f in features]
+        cores = ["#d62728" if p > 0 else "#1f77b4" for p in pesos]
 
-    folium.LayerControl().add_to(mapa)
+        axes[i].barh(tokens, pesos, color=cores)
+        axes[i].axvline(0, color="black", linewidth=0.8)
+        axes[i].set_title(f"Acórdão {i+1} — tokens mais preditivos de Irregular")
+        axes[i].set_xlabel("Peso LIME")
 
+    plt.tight_layout()
     caminho = FIGURAS / nome_arquivo
-    mapa.save(str(caminho))
-    print(f"Mapa salvo em {caminho}")
+    fig.savefig(caminho, dpi=150)
+    plt.close(fig)
+    print(f"Plot LIME salvo em {caminho}")
     return caminho

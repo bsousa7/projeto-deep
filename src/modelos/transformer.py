@@ -1,4 +1,4 @@
-"""Fine-tuning de BERTimbau para classificação de demandas de ouvidoria."""
+"""Fine-tuning de LegalBert-pt para classificação de acórdãos do TCU."""
 
 import json
 from pathlib import Path
@@ -20,8 +20,13 @@ from transformers import (
 )
 
 RANDOM_STATE = 42
-MODELO_PADRAO = "neuralmind/bert-base-portuguese-cased"
+# Modelo principal: LegalBert-pt (corpus jurídico BR)
+# Fallback: neuralmind/bert-base-portuguese-cased (BERTimbau base)
+MODELO_PADRAO = "dominguesm/legal-bert-base-cased-ptbr"
 RESULTADOS = Path(__file__).resolve().parents[2] / "resultados"
+
+MAX_HEAD = 128   # tokens do início do acórdão (contexto do processo)
+MAX_TAIL = 384   # tokens do final do acórdão (Dispositivo/conclusão)
 
 
 def _calcular_metricas(eval_pred) -> dict:
@@ -32,56 +37,60 @@ def _calcular_metricas(eval_pred) -> dict:
     return {"f1_macro": f1}
 
 
-def tokenizar(
+def tokenizar_head_tail(
     textos: list[str],
     tokenizer,
-    max_length: int = 512,
-) -> dict:
-    """Tokeniza uma lista de textos para entrada no modelo.
+    max_head: int = MAX_HEAD,
+    max_tail: int = MAX_TAIL,
+) -> list[dict]:
+    """Tokeniza cada texto aplicando estratégia head+tail.
+
+    Concatena os primeiros max_head tokens + os últimos max_tail tokens,
+    totalizando até 512 tokens por amostra.
+
+    Referência: Sun et al. (2019) — How to Fine-Tune BERT for Text Classification.
 
     Args:
-        textos: Lista de strings.
+        textos: Lista de textos já limpos (limpar_para_bert).
         tokenizer: Tokenizador HuggingFace.
-        max_length: Comprimento máximo de tokens.
+        max_head: Tokens do início.
+        max_tail: Tokens do final.
 
     Returns:
-        Dicionário com input_ids, attention_mask, token_type_ids.
+        Lista de dicionários com input_ids e attention_mask.
     """
-    return tokenizer(
-        textos,
-        padding="max_length",
-        truncation=True,
-        max_length=max_length,
-        return_tensors="pt",
-    )
+    encodings = []
+    for texto in textos:
+        ids = tokenizer.encode(texto, add_special_tokens=False)
+        if len(ids) > max_head + max_tail:
+            ids = ids[:max_head] + ids[-max_tail:]
+        # Adicionar tokens especiais [CLS] e [SEP]
+        ids = [tokenizer.cls_token_id] + ids + [tokenizer.sep_token_id]
+        comprimento = max_head + max_tail + 2
+        mascara = [1] * len(ids) + [0] * (comprimento - len(ids))
+        ids = ids + [tokenizer.pad_token_id] * (comprimento - len(ids))
+        encodings.append({"input_ids": ids, "attention_mask": mascara})
+    return encodings
 
 
 def _preparar_dataset(
     textos: pd.Series,
     tokenizer,
-    max_length: int = 512,
+    max_head: int = MAX_HEAD,
+    max_tail: int = MAX_TAIL,
     rotulos: Optional[np.ndarray] = None,
 ) -> Dataset:
-    """Converte Series de texto (e opcionalmente rótulos) em Dataset HuggingFace."""
-    dados = {"texto": textos.tolist()}
+    """Converte Series de texto em Dataset HuggingFace com head+tail."""
+    encodings = tokenizar_head_tail(textos.tolist(), tokenizer, max_head, max_tail)
+
+    dados = {
+        "input_ids": [e["input_ids"] for e in encodings],
+        "attention_mask": [e["attention_mask"] for e in encodings],
+    }
     if rotulos is not None:
         dados["labels"] = rotulos.tolist()
 
     dataset = Dataset.from_dict(dados)
-
-    def tokenizar_batch(batch):
-        enc = tokenizer(
-            batch["texto"],
-            padding="max_length",
-            truncation=True,
-            max_length=max_length,
-        )
-        if "labels" in batch:
-            enc["labels"] = batch["labels"]
-        return enc
-
-    colunas_remover = ["texto"]
-    dataset = dataset.map(tokenizar_batch, batched=True, remove_columns=colunas_remover)
     dataset.set_format("torch")
     return dataset
 
@@ -93,27 +102,27 @@ def treinar_transformer(
     y_val: pd.Series,
     X_test: pd.Series,
     modelo_nome: str = MODELO_PADRAO,
-    max_length: int = 256,
+    max_head: int = MAX_HEAD,
+    max_tail: int = MAX_TAIL,
     epocas: int = 3,
     batch_size: int = 16,
     lr: float = 2e-5,
-    usar_lora: bool = False,
     seed: int = RANDOM_STATE,
 ) -> tuple:
-    """Fine-tuning do Transformer e predição no conjunto de teste.
+    """Fine-tuning do LegalBert-pt com truncação head+tail.
 
     Args:
-        X_train: Textos de treino.
+        X_train: Textos de treino (já processados por limpar_para_bert).
         y_train: Rótulos de treino.
         X_val: Textos de validação.
         y_val: Rótulos de validação.
         X_test: Textos de teste.
         modelo_nome: Identificador HuggingFace do modelo base.
-        max_length: Comprimento máximo de tokens (≤512).
-        epocas: Número de épocas de treinamento.
+        max_head: Tokens do início do documento.
+        max_tail: Tokens do final do documento.
+        epocas: Número de épocas.
         batch_size: Tamanho do batch.
         lr: Taxa de aprendizado.
-        usar_lora: Se True, aplica LoRA (peft) para eficiência em GPU limitada.
         seed: Semente para reprodutibilidade.
 
     Returns:
@@ -124,7 +133,6 @@ def treinar_transformer(
     encoder = LabelEncoder()
     y_train_enc = encoder.fit_transform(y_train)
     y_val_enc = encoder.transform(y_val)
-    y_test_enc = encoder.transform(pd.Series(y_val.index.map(lambda _: y_val.iloc[0])))
     num_rotulos = len(encoder.classes_)
 
     tokenizer = AutoTokenizer.from_pretrained(modelo_nome)
@@ -132,24 +140,8 @@ def treinar_transformer(
         modelo_nome, num_labels=num_rotulos
     )
 
-    if usar_lora:
-        try:
-            from peft import LoraConfig, TaskType, get_peft_model
-
-            config_lora = LoraConfig(
-                task_type=TaskType.SEQ_CLS,
-                r=8,
-                lora_alpha=16,
-                lora_dropout=0.1,
-                target_modules=["query", "value"],
-            )
-            modelo = get_peft_model(modelo, config_lora)
-            modelo.print_trainable_parameters()
-        except ImportError:
-            print("peft não instalado — treinando modelo completo.")
-
-    ds_treino = _preparar_dataset(X_train, tokenizer, max_length, rotulos=y_train_enc)
-    ds_val = _preparar_dataset(X_val, tokenizer, max_length, rotulos=y_val_enc)
+    ds_treino = _preparar_dataset(X_train, tokenizer, max_head, max_tail, rotulos=y_train_enc)
+    ds_val = _preparar_dataset(X_val, tokenizer, max_head, max_tail, rotulos=y_val_enc)
 
     saida_dir = RESULTADOS / "modelo_transformer"
     args_treino = TrainingArguments(
@@ -159,6 +151,7 @@ def treinar_transformer(
         per_device_eval_batch_size=batch_size,
         learning_rate=lr,
         weight_decay=0.01,
+        warmup_ratio=0.1,
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
@@ -181,8 +174,7 @@ def treinar_transformer(
 
     trainer.train()
 
-    # Predição no conjunto de teste (sem rótulos — apenas inferência)
-    ds_teste = _preparar_dataset(X_test, tokenizer, max_length)
+    ds_teste = _preparar_dataset(X_test, tokenizer, max_head, max_tail)
     saida_pred = trainer.predict(ds_teste)
     predicoes_enc = np.argmax(saida_pred.predictions, axis=-1)
     predicoes = encoder.inverse_transform(predicoes_enc)
@@ -190,10 +182,7 @@ def treinar_transformer(
     return modelo, predicoes, encoder
 
 
-def carregar_modelo(
-    caminho: str,
-    modelo_nome: str = MODELO_PADRAO,
-) -> tuple:
+def carregar_modelo(caminho: str, modelo_nome: str = MODELO_PADRAO) -> tuple:
     """Carrega modelo fine-tunado do disco.
 
     Args:

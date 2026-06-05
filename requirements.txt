@@ -1,10 +1,11 @@
-# Categorização Automática de Demandas de Ouvidoria — dependências
+# Jurimetria Preditiva em Acórdãos do TCU — dependências
 # Trave as versões EXATAS após o primeiro ambiente funcionar: pip freeze > requirements.txt
 
 # --- Dados ---
 pandas>=2.2
 pyarrow>=15.0
 numpy>=1.26
+tqdm>=4.66
 
 # --- Modelagem clássica (baseline) ---
 scikit-learn>=1.4
@@ -13,24 +14,23 @@ scikit-learn>=1.4
 torch>=2.2
 transformers>=4.40
 datasets>=2.19
-peft>=0.11          # LoRA / QLoRA
 accelerate>=0.30
 
 # --- PLN ---
-spacy>=3.7
 nltk>=3.8
-# Após instalar, baixe o modelo: python -m spacy download pt_core_news_lg
+# Após instalar: python -c "import nltk; nltk.download('stopwords')"
 
-# --- Coleta ---
+# --- Aquisição de dados ---
 requests>=2.31
-beautifulsoup4>=4.12
-playwright>=1.44    # após instalar: playwright install
+pdfplumber>=0.11    # extração de texto de PDFs (campo voto, se necessário)
 
-# --- Geo / Visualização (diferencial) ---
-geopandas>=0.14
-folium>=0.16
+# --- Explicabilidade (diferencial) ---
+lime>=0.2
+
+# --- Visualização ---
 matplotlib>=3.8
 seaborn>=0.13
+wordcloud>=1.9
 
 # --- Qualidade de código ---
 black>=24.0

@@ -5,86 +5,88 @@
 
 ---
 
-## D-001 — Fonte de dados principal
+## D-01 — Estratégia de truncação para documentos longos
 
-**Data:** 04/06/2026
-**Decisão:** Qual fonte usar para coleta de manifestações?
+**Data:** 05/06/2026
+**Decisão:** Como lidar com acórdãos que excedem 512 tokens (limite do BERT)?
 **Alternativas:**
-- A) Fala.BR (CGU) — maior abrangência nacional, dados de ouvidoria federal
-- B) Portais 156 municipais — foco em serviços urbanos, pode ter geolocalização
-- C) Consumidor.gov.br — foco em relações de consumo, labels estruturados por segmento
+- A) Truncação simples (primeiros 512 tokens) — ignora o Dispositivo final
+- B) **Head+tail (128+384)** — captura início (contexto) e final (conclusão)
+- C) Chunking + mean pooling — maior custo computacional
+- D) Longformer — requer modelo diferente, maior complexidade
 
-**Escolha:** *(a definir pela equipe — confirmar com professor antes do scraping)*
-**Motivo pendente:** Verificar disponibilidade de labels prontos vs. necessidade de anotação manual; verificar `robots.txt` e rate limiting de cada fonte.
+**Escolha:** **Head+tail (opção B)** — primeiros 128 + últimos 384 tokens
+**Motivo:** Os primeiros tokens capturam o contexto do processo (órgão, objeto, período); os últimos tokens capturam o Dispositivo, que é a parte mais discriminativa para o desfecho. Respaldada por Sun et al. (2019), que demonstrou superioridade desta estratégia em documentos jurídicos longos.
 
 ---
 
-## D-002 — Categorias de classificação
+## D-02 — Modelo Transformer base
 
-**Data:** 04/06/2026
-**Decisão:** Quais categorias usar para rotulagem?
+**Data:** 05/06/2026
+**Decisão:** Qual modelo Transformer usar como base para fine-tuning?
 **Alternativas:**
-- A) Usar taxonomia nativa da fonte (ex.: "assunto" do Fala.BR)
-- B) Definir categorias próprias (5–10 macro-categorias de serviço público)
-- C) Combinação: partir da taxonomia nativa e agrupar em macro-categorias
+- A) BERTimbau base (`neuralmind/bert-base-portuguese-cased`) — BERT pré-treinado em PT-BR geral
+- B) **LegalBert-pt** (`dominguesm/legal-bert-base-cased-ptbr`) — BERTimbau re-treinado em corpus jurídico BR
+- C) JurisBERT — focado em tarefas STS, não classificação
 
-**Escolha:** *(a definir após análise exploratória dos dados coletados)*
-**Motivo:** O número de categorias afeta diretamente o balanceamento das classes e a dificuldade do problema de classificação.
+**Escolha:** **LegalBert-pt (opção B)** como modelo principal; BERTimbau como fallback
+**Motivo:** LegalBert-pt foi pré-treinado em corpus jurídico brasileiro (STF, petições, decisões), o que o torna semanticamente mais próximo do domínio dos acórdãos do TCU. Maior aderência ao vocabulário jurídico reduz o número de épocas necessárias para convergência.
 
 ---
 
-## D-003 — Métrica principal de avaliação
+## D-03 — Métrica principal de avaliação
 
-**Data:** 04/06/2026
+**Data:** 05/06/2026
 **Decisão:** Qual métrica priorizar na avaliação e comparação?
 **Alternativas:**
-- A) Acurácia — fácil de interpretar, mas enganosa com dados desbalanceados
-- B) F1-macro — penaliza igualmente o desempenho ruim em classes minoritárias
+- A) Acurácia — enganosa com dados desbalanceados
+- B) **F1-macro** — penaliza igualmente o desempenho ruim em classes minoritárias
 - C) F1-weighted — pondera pelo suporte de cada classe
 
-**Escolha:** **F1-macro** (opção B)
-**Motivo:** Dados de ouvidoria são inerentemente desbalanceados (algumas categorias têm muito mais registros). F1-macro garante que o modelo seja avaliado com igual peso em todas as categorias, inclusive as minoritárias — que podem ser as mais relevantes para a gestão pública.
+**Escolha:** **F1-macro (opção B)**
+**Motivo:** Acórdãos irregulares são minoria em relação aos regulares (desbalanceamento esperado). F1-macro garante que o modelo seja avaliado com igual peso em todas as classes, penalizando falhas em "Irregular" — que é a classe de maior interesse para o radar jurimétrico.
 
 ---
 
-## D-004 — Modelo base para fine-tuning
+## D-04 — Campo e critério do filtro temático
 
-**Data:** 04/06/2026
-**Decisão:** Qual modelo Transformer usar como base?
+**Data:** 05/06/2026
+**Decisão:** Qual campo e quais termos usar para o filtro temático de saúde/educação?
 **Alternativas:**
-- A) BERTimbau (`neuralmind/bert-base-portuguese-cased`) — BERT pré-treinado em português
-- B) BERTugues — variante alternativa para PT-BR
-- C) Albertina PT-BR — modelo mais recente baseado em DeBERTa
+- A) Filtro por órgão (UG, ministério) — pode perder casos intersetoriais
+- B) Filtro por relator — sem relação direta com o tema
+- C) **Filtro por texto (`sumario` ou `indexacao`)** — captura o assunto independente do órgão
 
-**Escolha:** **BERTimbau** (opção A) como modelo primário
-**Motivo:** BERTimbau é o modelo de referência para PT-BR, com vasta literatura de baseline disponível (incluindo o artigo original de Souza et al., 2020). Facilita comparação com trabalhos anteriores. Albertina pode ser explorada como comparação se o tempo permitir.
+**Escolha:** **Filtro textual (opção C)** com termos: "saúde", "SUS", "FNDE", "merenda",
+"educação", "ministério da saúde", "secretaria de saúde", "secretaria de educação"
+**Motivo:** Mais robusto — captura acórdãos de saúde/educação independente do órgão gestor ou relator. Termos cobrem tanto nível federal (SUS, FNDE) quanto estadual/municipal (secretarias).
 
 ---
 
-## D-005 — Split treino/validação/teste
+## D-05 — Campo de label usado *(a preencher após inspecionar CSV real)*
 
-**Data:** 04/06/2026
-**Decisão:** Proporção do split estratificado.
+**Data:** _(preencher na Etapa 2)_
+**Decisão:** Qual campo do CSV usar como rótulo de desfecho?
 **Alternativas:**
-- A) 80/10/10 — padrão acadêmico, reserva mais dados para treino
-- B) 70/15/15 — mais dados para validação/teste, mais confiança nas métricas
-- C) 60/20/20 — adequado para datasets pequenos
+- A) Campo `tipo` (se contiver "Irregular"/"Regular")
+- B) Campo `situacao` (se disponível)
+- C) Regex no `sumario`: `r"contas\s+(irregulares|regulares\s+com\s+ressalva|regulares)"`
 
-**Escolha:** **80/10/10** (opção A) com `stratify=y`
-**Motivo:** Com datasets menores (esperado ~1.000–5.000 registros inicialmente), maximizar treino é crítico para fine-tuning de Transformer. A estratificação garante representação de todas as classes nos três splits.
+**Escolha:** _(preencher após `python src/preprocessamento/filtrar_tematico.py --inspecionar`)_
+**Motivo:** _(preencher)_
 
 ---
 
-## D-006 — Limpeza diferenciada por modelo
+## D-06 — Campo de texto para o Transformer *(a preencher após inspecionar CSV real)*
 
-**Data:** 04/06/2026
-**Decisão:** Usar a mesma limpeza para TF-IDF e BERT?
+**Data:** _(preencher na Etapa 2)_
+**Decisão:** Qual campo de texto usar como entrada do LegalBert-pt?
 **Alternativas:**
-- A) Mesma limpeza para ambos — simplicidade
-- B) Limpeza agressiva para TF-IDF, leve para BERT — melhor adequação a cada arquitetura
+- A) Campo `sumario` — disponível no CSV, mais curto, MVP válido
+- B) Campo `voto` extraído de PDF via `pdfplumber` — mais discriminativo, maior custo
 
-**Escolha:** **Limpeza diferenciada** (opção B)
-**Motivo:** Modelos Transformer (BERT) foram pré-treinados em texto quase-natural; remover stopwords ou lematizar degrada a representação contextual. TF-IDF, por outro lado, se beneficia da redução de ruído e normalização para construir um espaço vetorial mais informativo.
+**Escolha:** _(preencher após verificar se CSV contém campo de texto integral)_
+**Motivo:** _(preencher)_
 
 ---
 

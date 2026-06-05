@@ -6,11 +6,11 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, f1_score
+from sklearn.metrics import accuracy_score, classification_report, f1_score, precision_score, recall_score
 from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 RANDOM_STATE = 42
 RESULTADOS = Path(__file__).resolve().parents[2] / "resultados"
@@ -100,8 +100,6 @@ def avaliar(
     print(f"F1-macro: {f1:.4f}")
     print(relatorio)
 
-    from sklearn.metrics import precision_score, recall_score, accuracy_score
-
     metricas = {
         "f1_macro": round(f1, 4),
         "precisao_macro": round(
@@ -120,21 +118,21 @@ if __name__ == "__main__":
 
     sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-    from src.preprocessamento.limpeza import limpar_para_tfidf, dividir_dados
+    from src.preprocessamento.limpeza import dividir_dados, limpar_para_tfidf
 
-    DATA_PROCESSED = Path(__file__).resolve().parents[2] / "data" / "processed"
-    arquivo = DATA_PROCESSED / "dados.parquet"
+    DATA_PROCESSED = Path(__file__).resolve().parents[2] / "data" / "interim"
+    arquivo = DATA_PROCESSED / "acordaos_filtrados.parquet"
 
     if not arquivo.exists():
         print(f"Arquivo não encontrado: {arquivo}")
-        print("Execute primeiro a coleta e o pré-processamento.")
+        print("Execute primeiro: python src/aquisicao/baixar_csvs.py && python src/preprocessamento/filtrar_tematico.py")
         sys.exit(1)
 
-    df = pd.read_parquet(arquivo)
-    df["texto_tfidf"] = df["texto"].apply(limpar_para_tfidf)
+    df = pd.read_parquet(arquivo, columns=["sumario", "label"])
+    df["texto_tfidf"] = df["sumario"].apply(limpar_para_tfidf)
 
     X_train, X_val, X_test, y_train, y_val, y_test = dividir_dados(
-        df, coluna_texto="texto_tfidf", coluna_label="categoria"
+        df, coluna_texto="texto_tfidf", coluna_label="label"
     )
 
     pipe, predicoes = treinar_baseline(X_train, y_train, X_test)
