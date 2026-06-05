@@ -37,9 +37,9 @@ secrets.json
 *.swp
 *.swo
 
-# Resultados gerados (recriar via pipeline)
-resultados/figuras/
-resultados/metricas.json
+# Resultados intermediários (grandes demais ou recriar via pipeline)
+# Figuras e métricas finais SÃO versionadas (parte do entregável)
+resultados/modelo_transformer/
 
 # Sistema operacional
 .DS_Store

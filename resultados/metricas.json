@@ -1,0 +1,46 @@
+{
+  "dataset": "mock sintetico 2023-2024 — executar com CSVs reais do TCU para resultados definitivos",
+  "corpus": {
+    "total_acordaos": 982,
+    "split": "70/15/15 estratificado",
+    "classes": [
+      "Irregular",
+      "Regular",
+      "Regular com Ressalva"
+    ]
+  },
+  "baseline_sumario": {
+    "f1_macro": 1.0,
+    "precisao_macro": 1.0,
+    "revocacao_macro": 1.0,
+    "acuracia": 1.0,
+    "modelo": "TF-IDF + LogisticRegression",
+    "campo_texto": "sumario",
+    "nota": "sumario contem veredicto explicito — F1=1.0 esperado"
+  },
+  "baseline_voto": {
+    "f1_macro": 1.0,
+    "precisao_macro": 1.0,
+    "revocacao_macro": 1.0,
+    "acuracia": 1.0,
+    "modelo": "TF-IDF + LinearSVC",
+    "campo_texto": "voto_simulado",
+    "nota": "campo sem veredicto — cenario mais realista"
+  },
+  "transformer": {
+    "f1_macro": null,
+    "modelo": "dominguesm/legal-bert-base-cased-ptbr",
+    "truncacao": "head+tail (128+384 tokens)",
+    "epocas": 3,
+    "batch_size": 16,
+    "lr": "2e-5",
+    "campo_texto": "voto_simulado",
+    "nota": "pendente execucao no Colab GPU — codigo em src/modelos/transformer.py"
+  },
+  "ganho_f1_macro": null,
+  "proxy_simulacao": {
+    "f1_macro": 1.0,
+    "modelo": "TF-IDF char-trigramas + SGDClassifier",
+    "nota": "simulacao CPU para validacao de pipeline — nao representa fine-tuning real"
+  }
+}
