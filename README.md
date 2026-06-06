@@ -62,26 +62,24 @@ Após filtro temático (saúde/SUS/educação/FNDE): **~2.000–4.000 acórdãos
 
 ## Resultados
 
-> Métricas obtidas com **CSVs reais do TCU** (2023–2024), corpus de ~534 acórdãos temáticos
-> (saúde + educação) após filtro. Fine-tuning executado no Google Colab (GPU Tesla T4).
+> Métricas com **CSVs reais do TCU** (2023–2024). Fine-tuning no Google Colab (GPU Tesla T4).
 
 | Modelo | Campo | F1-macro | Acurácia | Obs. |
 |---|---|---|---|---|
-| TF-IDF + LogisticRegression | `SUMARIO` | **0.6705** | 92.6% | Baseline sólido para corpus pequeno |
-| **LegalBert-pt head+tail** | `VOTO` | 0.3114 | 87.6% | Colapso para classe majoritária — corpus insuficiente |
+| TF-IDF + LogisticRegression | `SUMARIO` | **0.6705** | 92.6% | Baseline sólido |
+| LegalBert-pt v1 (sem pesos) | `VOTO` | 0.3114 | 87.6% | Colapso para "Regular" |
+| **LegalBert-pt v2 (class weights)** | `VOTO` | **0.4972** | 90.1% | +60% vs v1 |
 
-**Análise:** O transformer teve desempenho inferior ao baseline, resultado coerente com a
-literatura para corpora pequenos (< 1.000 amostras). O recall_macro = 0.33 indica que o modelo
-colapsou para a classe majoritária ("Regular", ~55% dos dados). Causas prováveis:
+**Análise dos resultados:**
 
-1. **Corpus reduzido** (~373 amostras de treino) — transformers precisam de ≥ 5.000 amostras
-2. **Desbalanceamento** não compensado por class weights
-3. **Campo `VOTO`** muito longo; head+tail pode não capturar o trecho discriminativo
+O corpus de acórdãos TCU sobre saúde/educação é fortemente enviesado: **87.6% dos registros são Irregulares** após o filtro temático. Isso explica por que o transformer v1 colapsou para a classe majoritária.
 
-**Próximos passos para superar o baseline:**
-- Ampliar para 2020–2024 (maior corpus temático)
-- Adicionar `class_weight='balanced'` no fine-tuning
-- Testar frozen base + apenas cabeça classificadora
+Com class weights balanceados automaticamente, o LegalBert-pt v2 obteve:
+- **Irregular**: F1 = 0.96 (excelente — classe bem representada)
+- **Regular com Ressalva**: F1 = 0.53 (razoável — 7 amostras de teste)
+- **Regular**: F1 = 0.00 (apenas 3 amostras no teste — insuficiente para aprender)
+
+O baseline TF-IDF ainda supera o transformer (F1 0.67 vs 0.50), resultado coerente com a literatura para corpus pequenos (< 500 amostras de treino). O transformer requer ≥ 5.000 amostras para superar modelos lineares em classificação jurídica.
 
 ---
 

@@ -1,5 +1,6 @@
 {
   "baseline": {
+<<<<<<< HEAD
     "f1_macro": 0.8404,
     "precisao_macro": 0.9025,
     "revocacao_macro": 0.7981,
@@ -13,3 +14,46 @@
   },
   "ganho_f1_macro": 0.0282
 }
+=======
+    "f1_macro": 0.6705,
+    "precisao_macro": 0.8947,
+    "revocacao_macro": 0.5873,
+    "acuracia": 0.9259,
+    "modelo": "TF-IDF + LogisticRegression (SUMARIO)",
+    "nota": "campo SUMARIO, limpeza agressiva, max_features=50000, ngram(1,2)"
+  },
+  "transformer_v1": {
+    "f1_macro": 0.3114,
+    "precisao_macro": 0.2922,
+    "revocacao_macro": 0.3333,
+    "acuracia": 0.8765,
+    "modelo": "LegalBert-pt head+tail (128+382)",
+    "nota": "sem class weights, 3 epocas, lr=2e-5 — colapso para classe majoritaria"
+  },
+  "transformer_v2": {
+    "f1_macro": 0.4972,
+    "precisao_macro": 0.4817,
+    "revocacao_macro": 0.5144,
+    "acuracia": 0.9012,
+    "modelo": "LegalBert-pt head+tail (128+382) + class weights",
+    "nota": "class weights balanceados automaticos, 5 epocas, lr=1e-5",
+    "f1_por_classe": {
+      "Irregular": 0.96,
+      "Regular com Ressalva": 0.53,
+      "Regular": 0.00
+    },
+    "suporte_teste": {
+      "Irregular": 71,
+      "Regular com Ressalva": 7,
+      "Regular": 3
+    }
+  },
+  "ganho_f1_macro_v2_vs_baseline": -0.1733,
+  "ganho_f1_macro_v2_vs_v1": 0.1858,
+  "distribuicao_corpus": {
+    "nota": "corpus TCU saude+educacao e fortemente skewed para Irregular (87.6% no teste)",
+    "hipotese": "filtro tematico captura preferencialmente acordaos de condenacao; 'contas regulares' usa phrasing diferente nao coberto pelo regex"
+  },
+  "dataset": "CSVs reais TCU 2023-2024 (445 MB + 2024), ~534 acordaos tematicos apos filtro"
+}
+>>>>>>> origin/claude/claude-md-review-bB2tg

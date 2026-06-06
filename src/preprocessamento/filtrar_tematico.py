@@ -20,22 +20,57 @@ csv.field_size_limit(min(sys.maxsize, 2_147_483_647))
 DATA_RAW = Path(__file__).resolve().parents[2] / "data" / "raw"
 DATA_INTERIM = Path(__file__).resolve().parents[2] / "data" / "interim"
 
-# Guardrail 3: termos temáticos obrigatórios
+# Guardrail 3: termos temáticos por domínio
+# Estrutura: cada domínio é uma chave com sua lista de termos.
+# O corpus principal do projeto é saude + educacao; outros domínios podem ser
+# incluídos como experimento de generalização via --temas na CLI.
+TERMOS_POR_TEMA: dict[str, list[str]] = {
+    "saude": [
+        "saúde", "saude",
+        "sus", "sistema único de saúde", "sistema unico de saude",
+        "fnde", "merenda", "alimentação escolar", "alimentacao escolar",
+        "ministério da saúde", "ministerio da saude",
+        "secretaria de saúde", "secretaria de saude",
+        "hospital", "ubs", "unidade básica de saúde", "vigilância sanitária",
+    ],
+    "educacao": [
+        "educação", "educacao",
+        "mec", "ministério da educação", "ministerio da educacao",
+        "secretaria de educação", "secretaria de educacao",
+        "escola", "ensino fundamental", "ensino médio", "ensino medio",
+        "universidade", "pnae", "pnate", "fundeb", "fundef",
+    ],
+    "seguranca": [
+        "segurança pública", "seguranca publica",
+        "polícia", "policia", "defesa civil",
+        "ministério da justiça", "ministerio da justica",
+        "secretaria de segurança", "secretaria de seguranca",
+    ],
+    "transporte": [
+        "transporte", "rodovia", "infraestrutura",
+        "dnit", "antt", "infraero",
+        "ministério dos transportes", "ministerio dos transportes",
+        "obra rodoviária", "obra rodoviaria", "pavimentação", "pavimentacao",
+    ],
+}
+
+# Temas ativos por padrão (corpus principal do projeto)
+TEMAS_PADRAO = ["saude", "educacao"]
+
+# Lista plana de termos ativos (usada internamente; reconstruída em combinar_anos)
 TERMOS_TEMATICOS = [
-    "saúde",
-    "saude",   # versão sem acento (ASSUNTO do TCU usa maiúsculo sem acento)
-    "sus",
-    "fnde",
-    "merenda",
-    "educação",
-    "educacao",
-    "ministério da saúde",
-    "ministerio da saude",
-    "secretaria de saúde",
-    "secretaria de saude",
-    "secretaria de educação",
-    "secretaria de educacao",
+    t for tema in TEMAS_PADRAO for t in TERMOS_POR_TEMA[tema]
 ]
+
+
+def _termos_para_temas(temas: list[str]) -> list[str]:
+    """Retorna lista plana de termos para os temas solicitados."""
+    termos = []
+    for tema in temas:
+        if tema not in TERMOS_POR_TEMA:
+            raise ValueError(f"Tema desconhecido: {tema!r}. Disponíveis: {list(TERMOS_POR_TEMA)}")
+        termos.extend(TERMOS_POR_TEMA[tema])
+    return termos
 
 # Colunas canônicas do projeto
 COLUNAS_BASE = [
@@ -199,9 +234,14 @@ def inspecionar_colunas(arquivo_csv: Path) -> list[str]:
     return []
 
 
-def _filtrar_tematico(df: pd.DataFrame, colunas_texto: list[str]) -> pd.DataFrame:
+def _filtrar_tematico(
+    df: pd.DataFrame,
+    colunas_texto: list[str],
+    termos: list[str] | None = None,
+) -> pd.DataFrame:
     """Filtra linhas que contenham ao menos um termo temático em qualquer coluna de texto."""
-    padrao = "|".join(re.escape(t) for t in TERMOS_TEMATICOS)
+    termos_ativos = termos if termos is not None else TERMOS_TEMATICOS
+    padrao = "|".join(re.escape(t) for t in termos_ativos)
     mascara = pd.Series(False, index=df.index)
     for col in colunas_texto:
         if col in df.columns:
@@ -282,7 +322,11 @@ def _extrair_label(df: pd.DataFrame) -> pd.DataFrame:
     return df
 
 
-def filtrar_acordaos(arquivo_csv: Path, col_texto: str = "sumario") -> pd.DataFrame:
+def filtrar_acordaos(
+    arquivo_csv: Path,
+    col_texto: str = "sumario",
+    temas: list[str] | None = None,
+) -> pd.DataFrame:
     """Carrega, filtra tematicamente e extrai labels de um CSV do TCU.
 
     Usa usecols para não carregar o arquivo inteiro na RAM (Guardrail 2).
@@ -366,7 +410,8 @@ def filtrar_acordaos(arquivo_csv: Path, col_texto: str = "sumario") -> pd.DataFr
             f"Nenhuma coluna de texto encontrada. Disponíveis: {df.columns.tolist()}"
         )
 
-    df_filtrado = _filtrar_tematico(df, colunas_filtro)
+    termos_ativos = _termos_para_temas(temas) if temas else None
+    df_filtrado = _filtrar_tematico(df, colunas_filtro, termos=termos_ativos)
     logger.info(
         "Após filtro temático: %d acórdãos (%.1f%% do total).",
         len(df_filtrado),
@@ -387,7 +432,11 @@ def filtrar_acordaos(arquivo_csv: Path, col_texto: str = "sumario") -> pd.DataFr
     return df_filtrado
 
 
-def combinar_anos(anos: list[int], destino_raw: Path = DATA_RAW) -> pd.DataFrame:
+def combinar_anos(
+    anos: list[int],
+    destino_raw: Path = DATA_RAW,
+    temas: list[str] | None = None,
+) -> pd.DataFrame:
     """Combina acórdãos filtrados de múltiplos anos.
 
     Processa um ano por vez para não acumular CSVs brutos na RAM (Guardrail 2).
@@ -395,17 +444,21 @@ def combinar_anos(anos: list[int], destino_raw: Path = DATA_RAW) -> pd.DataFrame
     Args:
         anos: Lista de anos a processar.
         destino_raw: Diretório com os CSVs brutos.
+        temas: Lista de temas a filtrar. None = temas padrão (saude + educacao).
+               Opções disponíveis: "saude", "educacao", "seguranca", "transporte".
 
     Returns:
         DataFrame combinado com todos os anos filtrados.
     """
+    temas_efetivos = temas or TEMAS_PADRAO
+    logger.info("Temas ativos: %s", temas_efetivos)
     partes = []
     for ano in anos:
         arquivo = destino_raw / f"acordao-completo-{ano}.csv"
         if not arquivo.exists():
             logger.warning("Arquivo não encontrado: %s — pulando.", arquivo)
             continue
-        df_ano = filtrar_acordaos(arquivo)
+        df_ano = filtrar_acordaos(arquivo, temas=temas_efetivos)
         df_ano["ano_fonte"] = ano
         partes.append(df_ano)
 
@@ -422,9 +475,18 @@ def combinar_anos(anos: list[int], destino_raw: Path = DATA_RAW) -> pd.DataFrame
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
-        description="Filtra acórdãos do TCU por tema (saúde/educação) e extrai labels"
+        description="Filtra acórdãos do TCU por tema e extrai labels"
     )
-    parser.add_argument("--anos", type=int, nargs="+", default=[2023, 2024])
+    parser.add_argument(
+        "--anos", type=int, nargs="+", default=[2020, 2021, 2022, 2023, 2024],
+        help="Anos a processar (padrão: 2020-2024)",
+    )
+    parser.add_argument(
+        "--temas", type=str, nargs="+", default=None,
+        choices=list(TERMOS_POR_TEMA.keys()),
+        help=f"Temas a filtrar (padrão: {TEMAS_PADRAO}). "
+             f"Opções: {list(TERMOS_POR_TEMA.keys())}",
+    )
     parser.add_argument(
         "--inspecionar",
         action="store_true",
@@ -444,8 +506,9 @@ if __name__ == "__main__":
                 print(f"  Colunas reais ({len(colunas)}): {colunas}")
                 print(f"  Mapeamento reconhecido ({len(mapa)}): {mapa}")
     else:
-        df = combinar_anos(args.anos)
+        df = combinar_anos(args.anos, temas=args.temas)
         saida = DATA_INTERIM / "acordaos_filtrados.parquet"
         df.to_parquet(saida, index=False)
         print(f"\nSalvo em {saida} ({len(df)} registros)")
+        print(f"Temas: {args.temas or TEMAS_PADRAO}")
         print(df["label"].value_counts())
