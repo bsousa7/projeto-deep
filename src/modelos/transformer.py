@@ -23,7 +23,7 @@ MODELO_PADRAO = "dominguesm/legal-bert-base-cased-ptbr"
 RESULTADOS = Path(__file__).resolve().parents[2] / "resultados"
 
 MAX_HEAD = 128   # tokens do início do acórdão (contexto do processo)
-MAX_TAIL = 384   # tokens do final do acórdão (Dispositivo/conclusão)
+MAX_TAIL = 382   # tokens do final (512 limite BERT − 2 especiais − 128 head = 382)
 
 
 class _TorchDataset(TorchDataset):
@@ -82,12 +82,16 @@ def tokenizar_head_tail(
     Returns:
         Lista de dicionários com input_ids e attention_mask.
     """
-    comprimento_max = max_head + max_tail + 2  # +2 para [CLS] e [SEP]
+    # BERT suporta no máximo 512 posições; [CLS] e [SEP] consomem 2
+    max_content = 512 - 2  # = 510 tokens de conteúdo
+    max_tail_efetivo = min(max_tail, max_content - max_head)  # garante ≤ 510 total
+    comprimento_max = max_head + max_tail_efetivo + 2  # ≤ 512
+
     encodings = []
     for texto in textos:
         ids = tokenizer.encode(str(texto), add_special_tokens=False)
-        if len(ids) > max_head + max_tail:
-            ids = ids[:max_head] + ids[-max_tail:]
+        if len(ids) > max_head + max_tail_efetivo:
+            ids = ids[:max_head] + ids[-max_tail_efetivo:]
         ids = [tokenizer.cls_token_id] + ids + [tokenizer.sep_token_id]
         n_pad = comprimento_max - len(ids)
         mascara = [1] * len(ids) + [0] * n_pad
