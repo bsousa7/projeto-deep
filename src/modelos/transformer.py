@@ -1,13 +1,12 @@
 """Fine-tuning de LegalBert-pt para classificação de acórdãos do TCU."""
 
-import json
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 import pandas as pd
 import torch
-from datasets import Dataset
+from torch.utils.data import Dataset as TorchDataset
 from sklearn.metrics import f1_score
 from sklearn.preprocessing import LabelEncoder
 from transformers import (
@@ -20,13 +19,37 @@ from transformers import (
 )
 
 RANDOM_STATE = 42
-# Modelo principal: LegalBert-pt (corpus jurídico BR)
-# Fallback: neuralmind/bert-base-portuguese-cased (BERTimbau base)
 MODELO_PADRAO = "dominguesm/legal-bert-base-cased-ptbr"
 RESULTADOS = Path(__file__).resolve().parents[2] / "resultados"
 
 MAX_HEAD = 128   # tokens do início do acórdão (contexto do processo)
 MAX_TAIL = 384   # tokens do final do acórdão (Dispositivo/conclusão)
+
+
+class _TorchDataset(TorchDataset):
+    """Dataset PyTorch puro.
+
+    Substitui datasets.Dataset.set_format('torch') que causa
+    ImportError: cannot import name 'VideoReader' from torchvision.io
+    em versões recentes do torchvision no Colab.
+    """
+
+    def __init__(self, encodings: list[dict], rotulos: Optional[np.ndarray] = None):
+        self.input_ids = [e["input_ids"] for e in encodings]
+        self.attention_mask = [e["attention_mask"] for e in encodings]
+        self.rotulos = rotulos
+
+    def __len__(self) -> int:
+        return len(self.input_ids)
+
+    def __getitem__(self, idx: int) -> dict:
+        item = {
+            "input_ids": torch.tensor(self.input_ids[idx], dtype=torch.long),
+            "attention_mask": torch.tensor(self.attention_mask[idx], dtype=torch.long),
+        }
+        if self.rotulos is not None:
+            item["labels"] = torch.tensor(int(self.rotulos[idx]), dtype=torch.long)
+        return item
 
 
 def _calcular_metricas(eval_pred) -> dict:
@@ -51,7 +74,7 @@ def tokenizar_head_tail(
     Referência: Sun et al. (2019) — How to Fine-Tune BERT for Text Classification.
 
     Args:
-        textos: Lista de textos já limpos (limpar_para_bert).
+        textos: Lista de textos já limpos.
         tokenizer: Tokenizador HuggingFace.
         max_head: Tokens do início.
         max_tail: Tokens do final.
@@ -59,16 +82,16 @@ def tokenizar_head_tail(
     Returns:
         Lista de dicionários com input_ids e attention_mask.
     """
+    comprimento_max = max_head + max_tail + 2  # +2 para [CLS] e [SEP]
     encodings = []
     for texto in textos:
-        ids = tokenizer.encode(texto, add_special_tokens=False)
+        ids = tokenizer.encode(str(texto), add_special_tokens=False)
         if len(ids) > max_head + max_tail:
             ids = ids[:max_head] + ids[-max_tail:]
-        # Adicionar tokens especiais [CLS] e [SEP]
         ids = [tokenizer.cls_token_id] + ids + [tokenizer.sep_token_id]
-        comprimento = max_head + max_tail + 2
-        mascara = [1] * len(ids) + [0] * (comprimento - len(ids))
-        ids = ids + [tokenizer.pad_token_id] * (comprimento - len(ids))
+        n_pad = comprimento_max - len(ids)
+        mascara = [1] * len(ids) + [0] * n_pad
+        ids = ids + [tokenizer.pad_token_id] * n_pad
         encodings.append({"input_ids": ids, "attention_mask": mascara})
     return encodings
 
@@ -79,20 +102,10 @@ def _preparar_dataset(
     max_head: int = MAX_HEAD,
     max_tail: int = MAX_TAIL,
     rotulos: Optional[np.ndarray] = None,
-) -> Dataset:
-    """Converte Series de texto em Dataset HuggingFace com head+tail."""
+) -> _TorchDataset:
+    """Converte Series de texto em _TorchDataset com tokenização head+tail."""
     encodings = tokenizar_head_tail(textos.tolist(), tokenizer, max_head, max_tail)
-
-    dados = {
-        "input_ids": [e["input_ids"] for e in encodings],
-        "attention_mask": [e["attention_mask"] for e in encodings],
-    }
-    if rotulos is not None:
-        dados["labels"] = rotulos.tolist()
-
-    dataset = Dataset.from_dict(dados)
-    dataset.set_format("torch")
-    return dataset
+    return _TorchDataset(encodings, rotulos)
 
 
 def treinar_transformer(
@@ -135,15 +148,25 @@ def treinar_transformer(
     y_val_enc = encoder.transform(y_val)
     num_rotulos = len(encoder.classes_)
 
+    print(f"Classes: {list(encoder.classes_)}")
+    print(f"Modelo: {modelo_nome}")
+    print(f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'ausente'}")
+
     tokenizer = AutoTokenizer.from_pretrained(modelo_nome)
     modelo = AutoModelForSequenceClassification.from_pretrained(
-        modelo_nome, num_labels=num_rotulos
+        modelo_nome, num_labels=num_rotulos, ignore_mismatched_sizes=True
     )
 
     ds_treino = _preparar_dataset(X_train, tokenizer, max_head, max_tail, rotulos=y_train_enc)
     ds_val = _preparar_dataset(X_val, tokenizer, max_head, max_tail, rotulos=y_val_enc)
 
+    # warmup_steps: 10% do total de steps de treino
+    steps_por_epoca = max(1, len(X_train) // batch_size)
+    warmup_steps = max(1, int(steps_por_epoca * epocas * 0.1))
+
     saida_dir = RESULTADOS / "modelo_transformer"
+    saida_dir.mkdir(parents=True, exist_ok=True)
+
     args_treino = TrainingArguments(
         output_dir=str(saida_dir),
         num_train_epochs=epocas,
@@ -151,7 +174,7 @@ def treinar_transformer(
         per_device_eval_batch_size=batch_size,
         learning_rate=lr,
         weight_decay=0.01,
-        warmup_ratio=0.1,
+        warmup_steps=warmup_steps,
         eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
@@ -161,6 +184,7 @@ def treinar_transformer(
         fp16=torch.cuda.is_available(),
         logging_steps=50,
         report_to="none",
+        save_total_limit=1,
     )
 
     trainer = Trainer(
@@ -172,6 +196,7 @@ def treinar_transformer(
         callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
     )
 
+    print(f"\nIniciando fine-tuning | {epocas} épocas | batch={batch_size} | lr={lr}")
     trainer.train()
 
     ds_teste = _preparar_dataset(X_test, tokenizer, max_head, max_tail)
