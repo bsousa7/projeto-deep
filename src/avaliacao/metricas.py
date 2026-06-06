@@ -55,6 +55,35 @@ def calcular_metricas(
     return metricas
 
 
+def calcular_metricas_por_classe(
+    y_true: pd.Series,
+    y_pred: np.ndarray,
+    classes: list[str],
+    nome_modelo: str = "modelo",
+) -> pd.DataFrame:
+    """Calcula Precisão, Revocação e F1 por classe individualmente.
+
+    Essencial para corpus desbalanceado: métricas macro ocultam
+    o colapso em classes minoritárias (F1=0 em 'Regular').
+    """
+    from sklearn.metrics import precision_recall_fscore_support
+
+    prec, rec, f1, suporte = precision_recall_fscore_support(
+        y_true, y_pred, labels=classes, average=None, zero_division=0
+    )
+    df = pd.DataFrame({
+        "Classe":    classes,
+        "Suporte":   suporte.astype(int),
+        "Precisão":  [round(p, 4) for p in prec],
+        "Revocação": [round(r, 4) for r in rec],
+        "F1":        [round(f, 4) for f in f1],
+    })
+    print(f"\n{'='*60}")
+    print(f"Métricas por classe — {nome_modelo}")
+    print(df.to_string(index=False))
+    return df
+
+
 def plotar_matriz_confusao(
     y_true: pd.Series,
     y_pred: np.ndarray,

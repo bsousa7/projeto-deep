@@ -77,6 +77,46 @@ def treinar_baseline(
     return pipe, predicoes
 
 
+def treinar_baseline_kfold(
+    X: pd.Series,
+    y: pd.Series,
+    modelo: Literal["logistic", "svm"] = "logistic",
+    n_splits: int = 5,
+    seed: int = RANDOM_STATE,
+) -> dict:
+    """Avalia o baseline com validação cruzada estratificada (K-Fold).
+
+    Retorna mean ± std do F1-macro e métricas por fold.
+    Uso recomendado quando o corpus tem < 1.000 amostras.
+    """
+    from sklearn.model_selection import StratifiedKFold, cross_validate
+    from sklearn.metrics import make_scorer
+
+    pipe = construir_pipeline(modelo=modelo, seed=seed)
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    scorer = {"f1_macro": make_scorer(f1_score, average="macro", zero_division=0)}
+
+    resultado = cross_validate(pipe, X, y, cv=cv, scoring=scorer, return_train_score=False)
+    f1_folds = resultado["test_f1_macro"]
+
+    print(f"\n{'='*60}")
+    print(f"K-Fold CV ({n_splits} folds) — {modelo}")
+    print(f"  F1-macro por fold: {[round(f, 4) for f in f1_folds]}")
+    print(f"  Média: {f1_folds.mean():.4f}  ±  {f1_folds.std():.4f}")
+    print(f"  IC 95% (aprox.): [{f1_folds.mean()-2*f1_folds.std():.4f}, "
+          f"{f1_folds.mean()+2*f1_folds.std():.4f}]")
+
+    return {
+        "modelo": modelo,
+        "n_splits": n_splits,
+        "f1_macro_por_fold": f1_folds.tolist(),
+        "f1_macro_media": round(float(f1_folds.mean()), 4),
+        "f1_macro_std":   round(float(f1_folds.std()),  4),
+        "ic95_lower": round(float(f1_folds.mean() - 2 * f1_folds.std()), 4),
+        "ic95_upper": round(float(f1_folds.mean() + 2 * f1_folds.std()), 4),
+    }
+
+
 def avaliar(
     y_test: pd.Series,
     predicoes: np.ndarray,
