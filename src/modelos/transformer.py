@@ -6,9 +6,11 @@ from typing import Optional
 import numpy as np
 import pandas as pd
 import torch
+import torch.nn as nn
 from torch.utils.data import Dataset as TorchDataset
 from sklearn.metrics import f1_score
 from sklearn.preprocessing import LabelEncoder
+from sklearn.utils.class_weight import compute_class_weight
 from transformers import (
     AutoModelForSequenceClassification,
     AutoTokenizer,
@@ -50,6 +52,26 @@ class _TorchDataset(TorchDataset):
         if self.rotulos is not None:
             item["labels"] = torch.tensor(int(self.rotulos[idx]), dtype=torch.long)
         return item
+
+
+class _TrainerComPesos(Trainer):
+    """Trainer com suporte a class weights para corpora desbalanceados.
+
+    Sobrescreve compute_loss para aplicar CrossEntropyLoss ponderada,
+    penalizando erros nas classes minoritárias (Irregular, Regular com Ressalva).
+    """
+
+    def __init__(self, *args, pesos_classes: Optional[torch.Tensor] = None, **kwargs):
+        super().__init__(*args, **kwargs)
+        self.pesos_classes = pesos_classes
+
+    def compute_loss(self, model, inputs, return_outputs=False, **kwargs):
+        labels = inputs.pop("labels")
+        outputs = model(**inputs)
+        logits = outputs.logits
+        peso = self.pesos_classes.to(logits.device) if self.pesos_classes is not None else None
+        loss = nn.CrossEntropyLoss(weight=peso)(logits, labels)
+        return (loss, outputs) if return_outputs else loss
 
 
 def _calcular_metricas(eval_pred) -> dict:
@@ -121,12 +143,14 @@ def treinar_transformer(
     modelo_nome: str = MODELO_PADRAO,
     max_head: int = MAX_HEAD,
     max_tail: int = MAX_TAIL,
-    epocas: int = 3,
+    epocas: int = 5,
     batch_size: int = 16,
-    lr: float = 2e-5,
+    lr: float = 1e-5,
     seed: int = RANDOM_STATE,
+    class_weights: Optional[dict] = None,
+    balancear_automatico: bool = True,
 ) -> tuple:
-    """Fine-tuning do LegalBert-pt com truncação head+tail.
+    """Fine-tuning do LegalBert-pt com truncação head+tail e suporte a class weights.
 
     Args:
         X_train: Textos de treino (já processados por limpar_para_bert).
@@ -137,10 +161,15 @@ def treinar_transformer(
         modelo_nome: Identificador HuggingFace do modelo base.
         max_head: Tokens do início do documento.
         max_tail: Tokens do final do documento.
-        epocas: Número de épocas.
+        epocas: Número de épocas (padrão 5 para corpus pequeno).
         batch_size: Tamanho do batch.
-        lr: Taxa de aprendizado.
+        lr: Taxa de aprendizado (padrão 1e-5, conservador para corpus pequeno).
         seed: Semente para reprodutibilidade.
+        class_weights: Dict {classe: peso} para corrigir desbalanceamento.
+                       Ex.: {"Irregular": 2.1, "Regular": 0.7, "Regular com Ressalva": 3.5}
+                       Se None e balancear_automatico=True, calcula automaticamente.
+        balancear_automatico: Se True e class_weights=None, calcula pesos via
+                              sklearn compute_class_weight('balanced').
 
     Returns:
         (modelo_treinado, predicoes_teste, encoder_rotulos)
@@ -152,7 +181,22 @@ def treinar_transformer(
     y_val_enc = encoder.transform(y_val)
     num_rotulos = len(encoder.classes_)
 
+    # Calcular / converter class weights
+    pesos_tensor: Optional[torch.Tensor] = None
+    if class_weights is not None:
+        # Garantir ordem igual ao LabelEncoder
+        pesos = [class_weights[c] for c in encoder.classes_]
+        pesos_tensor = torch.tensor(pesos, dtype=torch.float)
+        print(f"Class weights (manual): { {c: round(p,3) for c,p in zip(encoder.classes_, pesos)} }")
+    elif balancear_automatico:
+        pesos = compute_class_weight("balanced", classes=encoder.classes_, y=y_train)
+        pesos_tensor = torch.tensor(pesos, dtype=torch.float)
+        print(f"Class weights (auto): { {c: round(p,3) for c,p in zip(encoder.classes_, pesos)} }")
+    else:
+        print("Class weights: desativado")
+
     print(f"Classes: {list(encoder.classes_)}")
+    print(f"Distribuição treino: { {c: int((y_train==c).sum()) for c in encoder.classes_} }")
     print(f"Modelo: {modelo_nome}")
     print(f"GPU: {torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'ausente'}")
 
@@ -164,7 +208,6 @@ def treinar_transformer(
     ds_treino = _preparar_dataset(X_train, tokenizer, max_head, max_tail, rotulos=y_train_enc)
     ds_val = _preparar_dataset(X_val, tokenizer, max_head, max_tail, rotulos=y_val_enc)
 
-    # warmup_steps: 10% do total de steps de treino
     steps_por_epoca = max(1, len(X_train) // batch_size)
     warmup_steps = max(1, int(steps_por_epoca * epocas * 0.1))
 
@@ -191,13 +234,14 @@ def treinar_transformer(
         save_total_limit=1,
     )
 
-    trainer = Trainer(
+    trainer = _TrainerComPesos(
         model=modelo,
         args=args_treino,
         train_dataset=ds_treino,
         eval_dataset=ds_val,
         compute_metrics=_calcular_metricas,
         callbacks=[EarlyStoppingCallback(early_stopping_patience=2)],
+        pesos_classes=pesos_tensor,
     )
 
     print(f"\nIniciando fine-tuning | {epocas} épocas | batch={batch_size} | lr={lr}")
