@@ -237,18 +237,18 @@ def slide_dados(c: canvas.Canvas) -> None:
     y -= 0.5 * cm
     c.setFont("Helvetica", 9)
     c.drawString(MARGIN, y,
-                 "Arquivos: acordao-completo-2023.csv e acordao-completo-2024.csv")
+                 "Arquivos: acordao-completo-AAAA.csv (2020–2024, 5 anos)")
 
     y -= 0.9 * cm
-    _secao_tag(c, "CAMPOS UTILIZADOS", MARGIN, y)
+    _secao_tag(c, "CAMPOS UTILIZADOS (CSV real — 33 colunas, sep='|')", MARGIN, y)
     y -= 0.7 * cm
 
     campos = [
-        ("numeroAcordao", "Identificador único"),
-        ("sumario",       "Texto de entrada (baseline + Transformer)"),
-        ("situacao",      "Label — Irregular / Regular c/ Ressalva / Regular  [D-05]"),
-        ("colegiado",     "Feature auxiliar: Plenário / Câmaras"),
-        ("dataSessao",    "Feature temporal"),
+        ("NUMACORDAO",  "Identificador único"),
+        ("SUMARIO",     "Texto de entrada — baseline TF-IDF"),
+        ("VOTO",        "Texto de entrada — Transformer [D-06: col. 29]"),
+        ("ACORDAO",     "Label: regex 'contas irregulares/regulares' [D-05]"),
+        ("DATASESSAO",  "Feature temporal"),
     ]
     for campo, desc in campos:
         c.setFillColor(AZUL_MEDIO)
@@ -267,8 +267,8 @@ def slide_dados(c: canvas.Canvas) -> None:
     ry -= 0.8 * cm
 
     etapas = [
-        (CINZA_ESCURO,  "~80.000 acórdãos",  "Total CSVs 2023–2024"),
-        (AZUL_MEDIO,    "~2.000–4.000",       "Após filtro temático"),
+        (CINZA_ESCURO,  "~500k acórdãos",    "Total CSVs 2020–2024 (5 anos)"),
+        (AZUL_MEDIO,    "534 acórdãos",       "Após filtro saúde/educação"),
         (VERDE,         "3 classes",          "Irregular / R.c.Ressalva / Regular"),
     ]
     for cor, num, desc in etapas:
@@ -366,7 +366,7 @@ def slide_metodologia(c: canvas.Canvas) -> None:
     c.drawCentredString(cx, cy, "→")
     c.setFont("Helvetica", 8)
     c.setFillColor(CINZA_ESCURO)
-    c.drawCentredString(cx, cy - 0.4 * cm, "Ganho")
+    c.drawCentredString(cx, cy - 0.4 * cm, "+0.028")
     c.drawCentredString(cx, cy - 0.7 * cm, "F1-macro")
 
     # Rodapé explicativo
@@ -499,7 +499,7 @@ def slide_pipeline(c: canvas.Canvas) -> None:
         x = x_col[col]
         y = y_start - row * row_h
 
-        concluido = int(etapa.split("–")[0]) <= 11
+        concluido = int(etapa.split("–")[0]) <= 12
         cor_bg = colors.HexColor("#f0fdf4") if concluido else colors.HexColor("#fff7ed")
         cor_borda = VERDE if concluido else LARANJA
 
@@ -539,8 +539,8 @@ def slide_eda(c: canvas.Canvas) -> None:
     c.setFillColor(AZUL_ESCURO)
     c.setFont("Helvetica-Bold", 9)
     c.drawString(MARGIN, 1.6 * cm,
-                 "Corpus filtrado: ~982 acórdãos  |  Desbalanceamento: Regular ~55%, Irregular ~30%,"
-                 " Reg.c/Ressalva ~15%  |  Justifica F1-macro como métrica")
+                 "Corpus final: 534 acórdãos (2020–2024)  |  Irregular ~88%, Regular ~6%, "
+                 "Reg.c/Ressalva ~6%  |  Desbalanceamento justifica F1-macro + class weights")
 
     c.showPage()
 
@@ -553,32 +553,31 @@ def slide_baseline(c: canvas.Canvas) -> None:
 
     y = H - 2.8 * cm
 
-    # Explicação sobre F1=1.0 no mock
-    _caixa(c, MARGIN, y - 1.3 * cm, W - 2 * MARGIN, 1.3 * cm,
-           bg=colors.HexColor("#fff7ed"), borda=LARANJA)
-    c.setFillColor(LARANJA)
+    # Resultado real
+    _caixa(c, MARGIN, y - 1.2 * cm, W - 2 * MARGIN, 1.2 * cm,
+           bg=colors.HexColor("#f0fdf4"), borda=VERDE)
+    c.setFillColor(VERDE)
     c.setFont("Helvetica-Bold", 9)
-    c.drawString(MARGIN + 0.3 * cm, y - 0.4 * cm, "Nota sobre o dataset:")
+    c.drawString(MARGIN + 0.3 * cm, y - 0.38 * cm, "Resultado com CSVs reais TCU 2020–2024:")
     c.setFillColor(CINZA_ESCURO)
     c.setFont("Helvetica", 9)
-    c.drawString(MARGIN + 0.3 * cm, y - 0.75 * cm,
-                 "Resultados com dados sintéticos (gerar_mock.py). F1=1.0 esperado — "
-                 "padrões artificialmente distintos.")
-    c.drawString(MARGIN + 0.3 * cm, y - 1.05 * cm,
-                 "Dados reais do TCU: resultados mais desafiadores e diferenciados.")
+    c.drawString(MARGIN + 0.3 * cm, y - 0.72 * cm,
+                 "534 acórdãos filtrados (saúde + educação) | split 70/15/15 estratificado | campo SUMARIO")
+    c.drawString(MARGIN + 0.3 * cm, y - 1.02 * cm,
+                 "Corpus desbalanceado: ~88% Irregular — class weights aplicados automaticamente")
 
     y -= 1.8 * cm
 
     # Tabela de métricas
-    _secao_tag(c, "MÉTRICAS — CAMPO voto_simulado (sem veredicto literal)", MARGIN, y)
+    _secao_tag(c, "MÉTRICAS — CAMPO SUMARIO (CSVs reais TCU 2020–2024)", MARGIN, y)
     y -= 0.85 * cm
 
-    headers = ["Modelo", "F1-macro", "Precisão", "Revocação", "Acurácia"]
+    headers = ["Modelo", "F1-macro", "Precisão macro", "Revocação macro", "Acurácia"]
     rows = [
-        ["TF-IDF + LogisticRegression", "0.9780", "0.9867", "0.9710", "0.9865"],
-        ["TF-IDF + LinearSVC ✓", "1.0000", "1.0000", "1.0000", "1.0000"],
+        ["TF-IDF + LogisticRegression ✓", "0.8404", "0.9025", "0.7981", "96.5%"],
+        ["TF-IDF + LinearSVC", "0.67*", "—", "—", "—"],
     ]
-    col_widths = [6.5 * cm, 2.2 * cm, 2.2 * cm, 2.3 * cm, 2.2 * cm]
+    col_widths = [6.5 * cm, 2.2 * cm, 2.5 * cm, 2.5 * cm, 2.0 * cm]
     row_h_t = 0.55 * cm
 
     # Cabeçalho
@@ -601,17 +600,17 @@ def slide_baseline(c: canvas.Canvas) -> None:
         c.rect(MARGIN, y - row_h_t, sum(col_widths), row_h_t, fill=1, stroke=0)
         for ci, val in enumerate(row):
             c.setFillColor(CINZA_ESCURO if ci > 0 else AZUL_ESCURO)
-            c.setFont("Helvetica-Bold" if ci > 0 else "Helvetica", 9)
+            c.setFont("Helvetica-Bold" if ci in (1,) else "Helvetica", 9)
             c.drawString(bx2 + 0.15 * cm, y - row_h_t + 0.12 * cm, val)
             bx2 += col_widths[ci]
         y -= row_h_t
 
     # Matriz de confusão
     y -= 0.5 * cm
-    _secao_tag(c, "MATRIZ DE CONFUSÃO — BASELINE (campo voto_simulado)", MARGIN, y)
+    _secao_tag(c, "MATRIZ DE CONFUSÃO — BASELINE (campo SUMARIO, dados reais)", MARGIN, y)
     y -= 0.5 * cm
 
-    img_path = FIGURAS / "matriz_confusao_baseline_voto.png"
+    img_path = FIGURAS / "matriz_confusao_baseline.png"
     if img_path.exists():
         c.drawImage(str(img_path), MARGIN, y - 4.2 * cm,
                     width=8 * cm, height=4.2 * cm,
@@ -621,13 +620,15 @@ def slide_baseline(c: canvas.Canvas) -> None:
     ox = MARGIN + 9.0 * cm
     oy = y - 0.3 * cm
     bullets_base = [
-        "Melhor modelo selecionado: TF-IDF + LinearSVC",
-        "F1-macro = 1.0 no mock (dados sintéticos com padrões\n  simples)",
-        "Campo 'voto_simulado': sem veredicto explícito —\n  simula dificuldade do campo voto real",
-        "Dados reais esperados: F1-macro ≈ 0.75–0.88\n  (linguagem jurídica ambígua, ruído real)",
+        "Melhor modelo: TF-IDF + LogisticRegression",
+        "F1-macro = 0.8404 com dados reais TCU 2020-2024",
+        "Precisão alta (0.90) — poucos falsos positivos",
+        "Revocação menor (0.80) em classes minoritárias",
+        "Piso de performance que o Transformer deve superar",
+        "* corpus 2023-2024 apenas: baseline F1=0.67",
     ]
     for b in bullets_base:
-        oy = _bullet(c, ox, oy, b.replace("\n  ", " "), tamanho=9)
+        oy = _bullet(c, ox, oy, b, tamanho=9)
 
     c.showPage()
 
@@ -717,13 +718,12 @@ def slide_resultados(c: canvas.Canvas) -> None:
     _secao_tag(c, "TABELA COMPARATIVA — F1-macro", MARGIN, y)
     y -= 0.85 * cm
 
-    headers = ["Modelo", "Campo", "F1-macro", "Ganho", "Status"]
+    headers = ["Modelo", "Campo", "F1-macro", "Acurácia", "Ganho"]
     rows = [
-        ["TF-IDF + LogReg", "sumario (c/ veredicto)", "1.0000", "—", "✅ Concluído"],
-        ["TF-IDF + LinearSVC ✓", "voto_simulado", "1.0000", "Ref.", "✅ Concluído"],
-        ["LegalBert-pt head+tail", "voto_simulado", "pendente", "+?", "⏳ Colab GPU"],
+        ["TF-IDF + LogisticRegression", "SUMARIO", "0.8404", "96.5%", "Ref. (baseline)"],
+        ["LegalBert-pt head+tail + weights ✓", "VOTO", "0.8686", "95.9%", "+0.028 ✅"],
     ]
-    col_widths = [5.8 * cm, 4.5 * cm, 2.4 * cm, 1.8 * cm, 3.2 * cm]
+    col_widths = [6.0 * cm, 2.5 * cm, 2.4 * cm, 2.2 * cm, 4.5 * cm]
     row_h_t = 0.58 * cm
 
     bx2 = MARGIN
@@ -736,44 +736,78 @@ def slide_resultados(c: canvas.Canvas) -> None:
         bx2 += col_widths[i]
     y -= row_h_t
 
-    cor_status = [VERDE, VERDE, LARANJA]
+    cor_status = [AZUL_MEDIO, VERDE]
     for ri, row in enumerate(rows):
-        bg = AZUL_CLARO if ri % 2 == 0 else BRANCO
+        bg = AZUL_CLARO if ri % 2 == 0 else colors.HexColor("#f0fdf4")
         bx2 = MARGIN
         c.setFillColor(bg)
         c.rect(MARGIN, y - row_h_t, sum(col_widths), row_h_t, fill=1, stroke=0)
         for ci, val in enumerate(row):
-            c.setFillColor(cor_status[ri] if ci == 4 else CINZA_ESCURO)
-            c.setFont("Helvetica-Bold" if ci in (2, 3, 4) else "Helvetica", 9)
+            c.setFillColor(cor_status[ri] if ci in (2, 4) else CINZA_ESCURO)
+            c.setFont("Helvetica-Bold" if ci in (2, 4) else "Helvetica", 9)
             c.drawString(bx2 + 0.15 * cm, y - row_h_t + 0.14 * cm, val)
             bx2 += col_widths[ci]
         y -= row_h_t
 
+    # Evolução do corpus
+    y -= 0.35 * cm
+    _secao_tag(c, "EVOLUÇÃO: CORPUS 2 ANOS vs. 5 ANOS", MARGIN, y, LARANJA)
+    y -= 0.75 * cm
+
+    ev_headers = ["Corpus", "Amostras", "Baseline F1", "Transformer F1", "Hipótese"]
+    ev_rows = [
+        ["2023–2024 (2 anos)", "~534", "0.67", "0.50", "✗ (insuficiente)"],
+        ["2020–2024 (5 anos)", "~534 filtrados", "0.8404", "0.8686", "✓ Confirmada"],
+    ]
+    ev_col_widths = [3.8 * cm, 3.0 * cm, 2.6 * cm, 2.8 * cm, 5.5 * cm]
+
+    bx2 = MARGIN
+    c.setFillColor(LARANJA)
+    c.rect(bx2, y - 0.5 * cm, sum(ev_col_widths), 0.5 * cm, fill=1, stroke=0)
+    for i, h in enumerate(ev_headers):
+        c.setFillColor(BRANCO)
+        c.setFont("Helvetica-Bold", 8)
+        c.drawString(bx2 + 0.1 * cm, y - 0.35 * cm, h)
+        bx2 += ev_col_widths[i]
     y -= 0.5 * cm
 
+    for ri, row in enumerate(ev_rows):
+        bg = colors.HexColor("#fff7ed") if ri % 2 == 0 else BRANCO
+        cor_hip = VERMELHO if ri == 0 else VERDE
+        bx2 = MARGIN
+        c.setFillColor(bg)
+        c.rect(MARGIN, y - 0.45 * cm, sum(ev_col_widths), 0.45 * cm, fill=1, stroke=0)
+        for ci, val in enumerate(row):
+            c.setFillColor(cor_hip if ci == 4 else CINZA_ESCURO)
+            c.setFont("Helvetica-Bold" if ci == 4 else "Helvetica", 8)
+            c.drawString(bx2 + 0.1 * cm, y - 0.30 * cm, val)
+            bx2 += ev_col_widths[ci]
+        y -= 0.45 * cm
+
     # F1 por classe
+    y -= 0.3 * cm
     _secao_tag(c, "F1 POR CLASSE", MARGIN, y)
     y -= 0.5 * cm
     img_path = FIGURAS / "f1_por_classe.png"
     if img_path.exists():
-        c.drawImage(str(img_path), MARGIN, y - 3.8 * cm,
-                    width=W * 0.55 - MARGIN, height=3.8 * cm,
+        c.drawImage(str(img_path), MARGIN, y - 3.2 * cm,
+                    width=W * 0.52 - MARGIN, height=3.2 * cm,
                     preserveAspectRatio=True, anchor="c")
 
     # Notas à direita
-    nx = W * 0.58
+    nx = W * 0.55
     ny = y - 0.3 * cm
     c.setFillColor(AZUL_ESCURO)
     c.setFont("Helvetica-Bold", 10)
     c.drawString(nx, ny, "Interpretação:")
     ny -= 0.6 * cm
     notas = [
-        "F1=1.0 no mock → padrões sint. claros",
-        "Dados reais: espera-se F1 ≈ 0.80–0.93",
-        "Classe 'Irregular' é a mais importante",
-        "  (recall alto → detectar condenação)",
-        "Ganho DL > baseline esperado em textos",
-        "  ambíguos (campo voto integral)",
+        "Hipotese confirmada: F1 Transformer > Baseline",
+        "Ganho real: +0.028 em F1-macro",
+        "Transformer superior em revocacao (0.917 vs 0.798)",
+        "Baseline superior em precisao (0.903 vs 0.836)",
+        "Corpus 2020-2024 essencial: mais dados = melhor DL",
+        "Class weights corrigiram colapso de classe majoritaria",
     ]
     for nota in notas:
         ny = _bullet(c, nx, ny, nota, tamanho=9)
@@ -846,12 +880,13 @@ def slide_conclusao(c: canvas.Canvas) -> None:
     _secao_tag(c, "O QUE ENTREGAMOS", MARGIN, y, VERDE)
     y -= 0.75 * cm
     concluidos = [
-        "Pipeline completo: filtro → EDA → split → baseline → DL",
-        "Corpus temático filtrado: ~2.000–4.000 acórdãos TCU",
-        "Baseline TF-IDF (F1-macro documentado)",
-        "Fine-tuning LegalBert-pt (código pronto para Colab GPU)",
-        "Explicabilidade: tokens preditivos de condenação",
-        "Notebook executado + README + repositório público",
+        "Corpus TCU 2020-2024: 534 acórdãos filtrados (saúde + educação)",
+        "Baseline TF-IDF + LogReg: F1-macro = 0.8404 (campo SUMARIO)",
+        "Fine-tuning LegalBert-pt head+tail + class weights no Colab T4",
+        "Transformer: F1-macro = 0.8686 (campo VOTO) — +0.028 vs baseline",
+        "Hipótese confirmada: Transformer supera TF-IDF com 5 anos de dados",
+        "Explicabilidade LIME: tokens preditivos de condenação identificados",
+        "Notebook executado de ponta a ponta + README atualizado",
     ]
     for item in concluidos:
         c.setFillColor(VERDE)
@@ -862,18 +897,18 @@ def slide_conclusao(c: canvas.Canvas) -> None:
         c.drawString(MARGIN + 0.5 * cm, y, item)
         y -= 0.44 * cm
 
-    y -= 0.4 * cm
-    _secao_tag(c, "PRÓXIMOS PASSOS", MARGIN, y, LARANJA)
+    y -= 0.3 * cm
+    _secao_tag(c, "PRÓXIMOS PASSOS", MARGIN, y, AZUL_MEDIO)
     y -= 0.7 * cm
     proximos = [
-        "Executar fine-tuning no Colab (GPU T4) com CSVs reais",
-        "Extrair campo voto via pdfplumber para experimento mais rico",
-        "Comparação final baseline × LegalBert-pt em F1-macro real",
+        "Repositório GitHub público disponível",
+        "Slides PDF finalizados — apresentação em 26-27/06",
+        "Extensão opcional: chunking + mean pooling (Estágio 2b)",
     ]
     for item in proximos:
-        c.setFillColor(LARANJA)
+        c.setFillColor(AZUL_MEDIO)
         c.setFont("Helvetica-Bold", 10)
-        c.drawString(MARGIN, y, "⏳")
+        c.drawString(MARGIN, y, "→")
         c.setFillColor(CINZA_ESCURO)
         c.setFont("Helvetica", 9)
         c.drawString(MARGIN + 0.5 * cm, y, item)
@@ -888,9 +923,12 @@ def slide_conclusao(c: canvas.Canvas) -> None:
     c.setFillColor(AZUL_ESCURO)
     c.setFont("Helvetica-Bold", 11)
     c.drawString(rx + 0.4 * cm, ry - 0.6 * cm, "Impacto Prático")
-    c.setFont("Helvetica-Bold", 20)
+    c.setFont("Helvetica-Bold", 17)
     c.setFillColor(AZUL_MEDIO)
-    c.drawString(rx + 0.4 * cm, ry - 1.4 * cm, "Radar Jurimétrico")
+    c.drawString(rx + 0.4 * cm, ry - 1.3 * cm, "Radar Jurimétrico")
+    c.setFont("Helvetica-Bold", 11)
+    c.setFillColor(VERDE)
+    c.drawString(rx + 0.4 * cm, ry - 1.85 * cm, "Baseline 0.84 → LegalBert-pt 0.87 (+2.8%)")
 
     c.setFillColor(CINZA_ESCURO)
     c.setFont("Helvetica", 9)
