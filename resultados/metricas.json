@@ -1,18 +1,15 @@
 {
   "baseline": {
-    "f1_macro": 0.6705,
-    "precisao_macro": 0.8947,
-    "revocacao_macro": 0.5873,
-    "acuracia": 0.9259
+    "f1_macro": 0.8404,
+    "precisao_macro": 0.9025,
+    "revocacao_macro": 0.7981,
+    "acuracia": 0.965
   },
   "transformer": {
-    "f1_macro": 0.3114,
-    "precisao_macro": 0.2922,
-    "revocacao_macro": 0.3333,
-    "acuracia": 0.8765,
-    "modelo": "LegalBert-pt head+tail (128+382)",
-    "nota": "fine-tuning real — Colab T4, 3 épocas"
+    "f1_macro": 0.8686,
+    "precisao_macro": 0.8357,
+    "revocacao_macro": 0.9174,
+    "acuracia": 0.9586
   },
-  "ganho_f1_macro": -0.3591,
-  "dataset": "CSVs reais TCU 2023-2024"
+  "ganho_f1_macro": 0.0282
 }
