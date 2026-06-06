@@ -1,89 +1,174 @@
-# Categorização Automática de Demandas de Ouvidoria
+# Jurimetria Preditiva em Acórdãos do TCU — Saúde e Educação
 
-Classificador de texto que direciona automaticamente manifestações de cidadãos para a **área responsável** (Saneamento, Iluminação, Trânsito, Saúde, etc.), a partir do texto livre da reclamação.
+**IDP — Mestrado em Ciência de Dados e IA no Setor Público**  
+**Disciplina:** Deep Learning e Processamento de Linguagem Natural | Modalidade 2 (NLP no Setor Público)
 
-Trabalho final da disciplina **Deep Learning e PLN** (Mestrado em Ciência de Dados e IA no Setor Público — IDP), Modalidade 2 (NLP no Setor Público).
+---
 
-**Hipótese:** um modelo de Deep Learning (Transformer com fine-tuning) supera o baseline clássico (TF-IDF + modelo linear) na métrica **F1-macro**.
+## Hipótese
 
------
+> Um modelo de Deep Learning (LegalBert-pt com fine-tuning + truncação head+tail) supera o baseline clássico (TF-IDF + modelo linear) na predição do desfecho de acórdãos do TCU, medido por **F1-macro**.
 
-## ⚠️ Regra de coleta
+---
 
-Os dados são **coletados pela equipe** (scraping/API), não baixados prontos — conforme exigência do plano de ensino (proibido Kaggle / bases prontas). A coleta respeita `robots.txt`, *rate limiting* e anonimização de dados pessoais. Ver detalhes em [`CLAUDE.md`](CLAUDE.md).
+## Objetivo
 
------
+Treinar um classificador de texto que lê acórdãos do Tribunal de Contas da União (TCU) — áreas de Saúde e Educação — e prediz o **desfecho do processo**:
 
-## Estrutura do repositório
+- **Irregular** — contas irregulares com multa/condenação  
+- **Regular com Ressalva** — falhas formais sem dano ao erário  
+- **Regular** — contas aprovadas com quitação
 
-```
-ouvidoria-nlp/
-├── CLAUDE.md                  # contexto e regras do projeto (para humanos e p/ o Claude Code)
-├── README.md                  # este arquivo
-├── requirements.txt
-├── data/                      # raw / interim / processed (brutos não versionados)
-├── src/                       # código modular (coleta, preprocessamento, modelos, avaliacao)
-├── notebooks/
-│   └── 00_projeto_completo.ipynb   # notebook orquestrador (entregável executado)
-├── resultados/                # figuras e métricas
-└── docs/
-    ├── referencias.md         # 5+ domínio, 5+ técnica (ABNT)
-    └── decisoes.md            # log de decisões e trade-offs
-```
+**Aplicação:** "radar jurimétrico" que permite a gestores públicos avaliar preventivamente o risco de condenação em processos licitatórios de saúde e educação.
 
------
+---
 
-## Como executar
+## Fonte de Dados
 
-```bash
-# 1. Ambiente virtual
-python -m venv .venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
+**Portal de Dados Abertos do TCU** — download direto de CSV, sem scraping:  
+`https://sites.tcu.gov.br/dados-abertos/jurisprudencia/`
 
-# 2. Dependências
-pip install -r requirements.txt
-python -m spacy download pt_core_news_lg
-playwright install                                   # se usar Playwright na coleta
+| Arquivo | Tamanho aprox. | Período |
+|---|---|---|
+| `acordao-completo-2023.csv` | ~200 MB | 2023 |
+| `acordao-completo-2024.csv` | ~300 MB | 2024 |
 
-# 3. Rodar o notebook (de dentro de notebooks/)
-jupyter notebook notebooks/00_projeto_completo.ipynb
-```
+Após filtro temático (saúde/SUS/educação/FNDE): **~2.000–4.000 acórdãos**.
 
-> Recomendado rodar o fine-tuning no **Google Colab** (GPU grátis).
+---
 
------
+## Metodologia — Dois Estágios
 
-## Pipeline
+### Estágio 1 — Baseline Clássico (TF-IDF)
 
-1. **Coleta** — scraping/API → `data/raw/`
-1. **Rotulagem** — 5–10 categorias + concordância entre anotadores (kappa de Cohen)
-1. **Pré-processamento** — limpeza + split estratificado
-1. **Baseline** — TF-IDF + Logistic Regression / SVM
-1. **Deep Learning** — fine-tuning de BERTimbau (`neuralmind/bert-base-portuguese-cased`)
-1. **Avaliação** — F1-macro, precisão/revocação por classe, matriz de confusão
-1. **Diferencial** — categoria prevista × geografia (mapa de calor)
+| Componente | Configuração |
+|---|---|
+| Vetorização | TF-IDF, max_features=50.000, ngram_range=(1,2) |
+| Modelos | LogisticRegression e LinearSVC |
+| Input | Campo `sumario` (limpeza agressiva) |
+| Métrica | **F1-macro** |
 
------
+### Estágio 2 — Deep Learning (LegalBert-pt)
+
+| Componente | Configuração |
+|---|---|
+| Modelo base | `dominguesm/legal-bert-base-cased-ptbr` |
+| Truncação | **Head+tail**: 128 tokens início + 384 tokens fim = 512 total |
+| Fine-tuning | 3–5 épocas, batch=16, lr=2e-5, warmup 10% |
+| Input | Campo `sumario` / `voto` |
+| Referência | Sun et al. (2019) — head+tail supera truncação simples em docs longos |
+
+---
 
 ## Resultados
 
-|Modelo                    |F1-macro     |
-|--------------------------|-------------|
-|Baseline (TF-IDF + linear)|*(preencher)*|
-|Transformer (BERTimbau)   |*(preencher)*|
-|**Ganho**                 |*(preencher)*|
+> Métricas com **CSVs reais do TCU** (2020–2024). Fine-tuning no Google Colab (GPU Tesla T4).
 
-*(Atualizar após a etapa 6. Figuras em `resultados/figuras/`.)*
+### Corpus 2020–2024 (resultado final)
 
------
+| Modelo | Campo | F1-macro | Acurácia |
+|---|---|---|---|
+| TF-IDF + LogisticRegression | `SUMARIO` | 0.8404 | 96.5% |
+| **LegalBert-pt head+tail + class weights** | `VOTO` | **0.8686** | 95.9% |
+| **Ganho Transformer** | | **+0.028** | — |
 
-## Referências
+✅ **Hipótese confirmada:** LegalBert-pt supera o baseline com corpus de 5 anos.
 
-Mínimo de 5 artigos de **domínio** (ouvidoria / governo digital) + 5 de **técnica** (classificação de texto / Transformers), em ABNT. Ver [`docs/referencias.md`](docs/referencias.md).
+### Evolução com corpus crescente
 
------
+| Corpus | Baseline F1 | Transformer F1 | Transformer > Baseline? |
+|---|---|---|---|
+| 2023–2024 (~534 amostras) | 0.67 | 0.50 | ✗ |
+| **2020–2024 (ampliado)** | **0.84** | **0.87** | **✓** |
 
-## Equipe
+---
 
-- *(nome 1)*
-- *(nome 2)*
-- *(nome 3)*
+## Decisões Arquiteturais
+
+| # | Decisão | Escolha | Motivo |
+|---|---|---|---|
+| D-01 | Truncação BERT | Head+tail (128+384) | Sun et al. (2019) |
+| D-02 | Modelo Transformer | LegalBert-pt | Corpus jurídico BR |
+| D-03 | Métrica principal | F1-macro | Penaliza desbalanceamento |
+| D-04 | Filtro temático | Termos no `sumario` | Independente do órgão |
+| D-05 | Campo de label | Regex em `ACORDAO`/`SUMARIO` | `SITUACAO` contém status processual, não veredicto |
+| D-06 | Campo de texto | `SUMARIO` (baseline) / `VOTO` (BERT) | `VOTO` disponível diretamente no CSV (col. 29)! |
+
+Ver detalhes em `docs/decisoes.md`.
+
+---
+
+## Estrutura do Repositório
+
+```
+tcu-jurimetria-nlp/
+├── CLAUDE.md                        # contexto e guardrails do projeto
+├── README.md                        # este arquivo
+├── requirements.txt                 # dependências travadas
+├── data/
+│   ├── raw/                         # CSVs brutos TCU (não versionados — > 100 MB)
+│   │   └── .gitkeep
+│   ├── interim/                     # acordaos_filtrados.parquet
+│   └── processed/                   # dados_processados.parquet + splits
+├── src/
+│   ├── aquisicao/
+│   │   ├── baixar_csvs.py           # download dos CSVs anuais do TCU
+│   │   └── gerar_mock.py            # dados sintéticos para testes de pipeline
+│   ├── preprocessamento/
+│   │   ├── filtrar_tematico.py      # filtro temático + extração de label
+│   │   └── limpeza.py               # limpeza para TF-IDF e head+tail BERT
+│   ├── modelos/
+│   │   ├── baseline.py              # TF-IDF + LogReg / LinearSVC
+│   │   └── transformer.py           # fine-tuning LegalBert-pt (requer GPU)
+│   └── avaliacao/
+│       └── metricas.py              # F1-macro, matrizes de confusão, LIME
+├── notebooks/
+│   └── 00_projeto_completo.ipynb    # entregável executado (orquestra tudo)
+├── resultados/
+│   ├── figuras/                     # EDA, matrizes de confusão, LIME plots
+│   └── metricas.json                # resultados comparativos dos modelos
+└── docs/
+    ├── referencias.md               # 5+ domínio, 5+ técnica (ABNT)
+    └── decisoes.md                  # log de decisões arquiteturais e trade-offs
+```
+
+---
+
+## Como Reproduzir
+
+### Ambiente local (EDA + Baseline)
+
+```bash
+git clone https://github.com/bsousa7/projeto-deep
+cd projeto-deep
+pip install -r requirements.txt
+
+# Opção A — dados reais do TCU (requer conexão)
+python src/aquisicao/baixar_csvs.py --anos 2023 2024
+
+# Opção B — dados sintéticos para validar o pipeline
+python src/aquisicao/gerar_mock.py
+
+# Executar pipeline completo
+python src/preprocessamento/filtrar_tematico.py --anos 2023 2024
+jupyter notebook notebooks/00_projeto_completo.ipynb
+```
+
+### Fine-tuning do Transformer (Google Colab — GPU T4)
+
+1. Abrir `notebooks/00_projeto_completo.ipynb` no Google Colab
+2. Runtime → Change runtime type → **T4 GPU**
+3. Upload de `data/processed/dados_processados.parquet`
+4. Executar células marcadas `# COLAB_GPU`
+
+---
+
+## Referências-chave
+
+- Vaswani et al. (2017). *Attention is all you need.* NeurIPS.
+- Devlin et al. (2019). *BERT: Pre-training of deep bidirectional Transformers.* NAACL.
+- Souza, Nogueira & Lotufo (2020). *BERTimbau: Pretrained BERT models for Brazilian Portuguese.* BRACIS.
+- Domingues (2022). *legal-bert-base-cased-ptbr.* HuggingFace Hub.
+- Sun et al. (2019). *How to Fine-Tune BERT for Text Classification.* arXiv.
+
+Ver lista completa em `docs/referencias.md`.

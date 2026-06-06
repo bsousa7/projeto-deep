@@ -6,11 +6,11 @@ from typing import Literal
 
 import numpy as np
 import pandas as pd
+from sklearn.feature_extraction.text import TfidfVectorizer
 from sklearn.linear_model import LogisticRegression
-from sklearn.metrics import classification_report, f1_score
+from sklearn.metrics import accuracy_score, classification_report, f1_score, precision_score, recall_score
 from sklearn.pipeline import Pipeline
 from sklearn.svm import LinearSVC
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 RANDOM_STATE = 42
 RESULTADOS = Path(__file__).resolve().parents[2] / "resultados"
@@ -41,9 +41,8 @@ def construir_pipeline(
             max_iter=1000,
             C=1.0,
             solver="lbfgs",
-            multi_class="multinomial",
             random_state=seed,
-            n_jobs=-1,
+            n_jobs=None,
         )
     elif modelo == "svm":
         clf = LinearSVC(max_iter=2000, C=1.0, random_state=seed)
@@ -78,6 +77,46 @@ def treinar_baseline(
     return pipe, predicoes
 
 
+def treinar_baseline_kfold(
+    X: pd.Series,
+    y: pd.Series,
+    modelo: Literal["logistic", "svm"] = "logistic",
+    n_splits: int = 5,
+    seed: int = RANDOM_STATE,
+) -> dict:
+    """Avalia o baseline com validação cruzada estratificada (K-Fold).
+
+    Retorna mean ± std do F1-macro e métricas por fold.
+    Uso recomendado quando o corpus tem < 1.000 amostras.
+    """
+    from sklearn.model_selection import StratifiedKFold, cross_validate
+    from sklearn.metrics import make_scorer
+
+    pipe = construir_pipeline(modelo=modelo, seed=seed)
+    cv = StratifiedKFold(n_splits=n_splits, shuffle=True, random_state=seed)
+    scorer = {"f1_macro": make_scorer(f1_score, average="macro", zero_division=0)}
+
+    resultado = cross_validate(pipe, X, y, cv=cv, scoring=scorer, return_train_score=False)
+    f1_folds = resultado["test_f1_macro"]
+
+    print(f"\n{'='*60}")
+    print(f"K-Fold CV ({n_splits} folds) — {modelo}")
+    print(f"  F1-macro por fold: {[round(f, 4) for f in f1_folds]}")
+    print(f"  Média: {f1_folds.mean():.4f}  ±  {f1_folds.std():.4f}")
+    print(f"  IC 95% (aprox.): [{f1_folds.mean()-2*f1_folds.std():.4f}, "
+          f"{f1_folds.mean()+2*f1_folds.std():.4f}]")
+
+    return {
+        "modelo": modelo,
+        "n_splits": n_splits,
+        "f1_macro_por_fold": f1_folds.tolist(),
+        "f1_macro_media": round(float(f1_folds.mean()), 4),
+        "f1_macro_std":   round(float(f1_folds.std()),  4),
+        "ic95_lower": round(float(f1_folds.mean() - 2 * f1_folds.std()), 4),
+        "ic95_upper": round(float(f1_folds.mean() + 2 * f1_folds.std()), 4),
+    }
+
+
 def avaliar(
     y_test: pd.Series,
     predicoes: np.ndarray,
@@ -100,8 +139,6 @@ def avaliar(
     print(f"F1-macro: {f1:.4f}")
     print(relatorio)
 
-    from sklearn.metrics import precision_score, recall_score, accuracy_score
-
     metricas = {
         "f1_macro": round(f1, 4),
         "precisao_macro": round(
@@ -120,21 +157,21 @@ if __name__ == "__main__":
 
     sys.path.append(str(Path(__file__).resolve().parents[2]))
 
-    from src.preprocessamento.limpeza import limpar_para_tfidf, dividir_dados
+    from src.preprocessamento.limpeza import dividir_dados, limpar_para_tfidf
 
-    DATA_PROCESSED = Path(__file__).resolve().parents[2] / "data" / "processed"
-    arquivo = DATA_PROCESSED / "dados.parquet"
+    DATA_PROCESSED = Path(__file__).resolve().parents[2] / "data" / "interim"
+    arquivo = DATA_PROCESSED / "acordaos_filtrados.parquet"
 
     if not arquivo.exists():
         print(f"Arquivo não encontrado: {arquivo}")
-        print("Execute primeiro a coleta e o pré-processamento.")
+        print("Execute primeiro: python src/aquisicao/baixar_csvs.py && python src/preprocessamento/filtrar_tematico.py")
         sys.exit(1)
 
-    df = pd.read_parquet(arquivo)
-    df["texto_tfidf"] = df["texto"].apply(limpar_para_tfidf)
+    df = pd.read_parquet(arquivo, columns=["sumario", "label"])
+    df["texto_tfidf"] = df["sumario"].apply(limpar_para_tfidf)
 
     X_train, X_val, X_test, y_train, y_val, y_test = dividir_dados(
-        df, coluna_texto="texto_tfidf", coluna_label="categoria"
+        df, coluna_texto="texto_tfidf", coluna_label="label"
     )
 
     pipe, predicoes = treinar_baseline(X_train, y_train, X_test)

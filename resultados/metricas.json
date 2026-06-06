@@ -1,0 +1,43 @@
+{
+  "corpus": "CSVs reais TCU 2020-2024, ~534 acórdãos temáticos (saúde + educação)",
+  "split": "70/15/15 estratificado por label (seed=42)",
+
+  "resultado_atual": {
+    "baseline": {
+      "f1_macro": 0.8404,
+      "precisao_macro": 0.9025,
+      "revocacao_macro": 0.7981,
+      "acuracia": 0.9650,
+      "modelo": "TF-IDF + LogisticRegression (SUMARIO)",
+      "nota": "corpus 2020-2024, max_features=50000, ngram(1,2)"
+    },
+    "transformer": {
+      "f1_macro": 0.8686,
+      "precisao_macro": 0.8357,
+      "revocacao_macro": 0.9174,
+      "acuracia": 0.9586,
+      "modelo": "LegalBert-pt head+tail (128+382) + class weights",
+      "nota": "corpus 2020-2024, 5 épocas, lr=1e-5, balancear_automatico=True"
+    },
+    "ganho_f1_macro": 0.0282,
+    "conclusao": "Transformer supera baseline em F1-macro com corpus 2020-2024"
+  },
+
+  "historico": {
+    "corpus_2anos": {
+      "descricao": "Apenas 2023-2024 (~534 amostras, ~373 treino)",
+      "baseline_f1_macro": 0.6705,
+      "transformer_v1_f1_macro": 0.3114,
+      "transformer_v2_f1_macro": 0.4972,
+      "nota_v1": "sem class weights, 3 epocas — colapso para classe majoritaria",
+      "nota_v2": "com class weights, 5 epocas — melhora significativa mas abaixo baseline"
+    },
+    "corpus_5anos": {
+      "descricao": "2020-2024 (~corpus ampliado)",
+      "baseline_f1_macro": 0.8404,
+      "transformer_f1_macro": 0.8686,
+      "ganho": 0.0282,
+      "nota": "transformer supera baseline — hipótese confirmada"
+    }
+  }
+}
