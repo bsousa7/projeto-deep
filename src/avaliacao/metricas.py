@@ -203,6 +203,86 @@ def plotar_f1_por_classe(
     return caminho
 
 
+def otimizar_threshold(
+    y_true: pd.Series,
+    proba_irregular: np.ndarray,
+    classe_irregular: str = "Irregular",
+    custo_fn: float = 10.0,
+    custo_fp: float = 1.0,
+    thresholds: np.ndarray | None = None,
+) -> dict:
+    """Encontra o threshold ótimo com base na assimetria de custo FN vs. FP.
+
+    Conforme Tabela 5 do artigo: o custo de um Falso Negativo (irregularidade
+    não detectada) é fiscalmente muito superior ao custo de um Falso Positivo
+    (auditoria desnecessária). Varrer thresholds abaixo de 0,5 prioriza a
+    revocação da classe 'Irregular' sem re-treinamento.
+
+    Args:
+        y_true: Rótulos verdadeiros (binário: classe_irregular vs. resto).
+        proba_irregular: Probabilidade prevista para a classe 'Irregular'.
+        classe_irregular: Nome da classe de alto custo.
+        custo_fn: Peso do Falso Negativo na função de custo total.
+        custo_fp: Peso do Falso Positivo na função de custo total.
+        thresholds: Array de thresholds a testar (default: 0,05 a 0,95).
+
+    Returns:
+        Dicionário com threshold_otimo, custo_minimo, revocacao, precisao,
+        fn_rate, fp_rate e tabela completa de resultados.
+    """
+    if thresholds is None:
+        thresholds = np.arange(0.05, 0.96, 0.05)
+
+    y_bin = (np.asarray(y_true) == classe_irregular).astype(int)
+    resultados = []
+
+    for t in thresholds:
+        pred_bin = (proba_irregular >= t).astype(int)
+        tp = int(((pred_bin == 1) & (y_bin == 1)).sum())
+        fn = int(((pred_bin == 0) & (y_bin == 1)).sum())
+        fp = int(((pred_bin == 1) & (y_bin == 0)).sum())
+        tn = int(((pred_bin == 0) & (y_bin == 0)).sum())
+
+        revocacao = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        precisao  = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        custo     = custo_fn * fn + custo_fp * fp
+
+        resultados.append({
+            "threshold": round(float(t), 2),
+            "revocacao": round(revocacao, 4),
+            "precisao":  round(precisao, 4),
+            "fn": fn, "fp": fp, "tp": tp, "tn": tn,
+            "fn_rate": round(fn / (tp + fn) if (tp + fn) > 0 else 0.0, 4),
+            "custo_total": round(float(custo), 2),
+        })
+
+    df = pd.DataFrame(resultados)
+    idx_otimo = df["custo_total"].idxmin()
+    otimo = df.loc[idx_otimo].to_dict()
+
+    print(f"\n{'='*60}")
+    print(f"Otimização de threshold (custo_fn={custo_fn}×, custo_fp={custo_fp}×)")
+    print(f"  Threshold ótimo : {otimo['threshold']:.2f}")
+    print(f"  Custo mínimo    : {otimo['custo_total']:.1f}")
+    print(f"  Revocação       : {otimo['revocacao']:.4f}  (FN rate: {otimo['fn_rate']:.4f})")
+    print(f"  Precisão        : {otimo['precisao']:.4f}")
+    print("\nTabela completa:")
+    print(df[["threshold", "revocacao", "precisao", "fn_rate", "custo_total"]].to_string(
+        index=False
+    ))
+
+    return {
+        "threshold_otimo": otimo["threshold"],
+        "custo_minimo": otimo["custo_total"],
+        "revocacao": otimo["revocacao"],
+        "precisao": otimo["precisao"],
+        "fn_rate": otimo["fn_rate"],
+        "fp_rate": round(otimo["fp"] / (otimo["fp"] + otimo["tn"])
+                         if (otimo["fp"] + otimo["tn"]) > 0 else 0.0, 4),
+        "tabela": df,
+    }
+
+
 def _fn_predict_proba(pipeline):
     """Retorna função de probabilidade compatível com LIME.
 
