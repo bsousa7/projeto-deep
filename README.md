@@ -62,24 +62,24 @@ Após filtro temático (saúde/SUS/educação/FNDE): **~2.000–4.000 acórdãos
 
 ## Resultados
 
-> Métricas com **CSVs reais do TCU** (2023–2024). Fine-tuning no Google Colab (GPU Tesla T4).
+> Métricas com **CSVs reais do TCU** (2020–2024). Fine-tuning no Google Colab (GPU Tesla T4).
 
-| Modelo | Campo | F1-macro | Acurácia | Obs. |
-|---|---|---|---|---|
-| TF-IDF + LogisticRegression | `SUMARIO` | **0.6705** | 92.6% | Baseline sólido |
-| LegalBert-pt v1 (sem pesos) | `VOTO` | 0.3114 | 87.6% | Colapso para "Regular" |
-| **LegalBert-pt v2 (class weights)** | `VOTO` | **0.4972** | 90.1% | +60% vs v1 |
+### Corpus 2020–2024 (resultado final)
 
-**Análise dos resultados:**
+| Modelo | Campo | F1-macro | Acurácia |
+|---|---|---|---|
+| TF-IDF + LogisticRegression | `SUMARIO` | 0.8404 | 96.5% |
+| **LegalBert-pt head+tail + class weights** | `VOTO` | **0.8686** | 95.9% |
+| **Ganho Transformer** | | **+0.028** | — |
 
-O corpus de acórdãos TCU sobre saúde/educação é fortemente enviesado: **87.6% dos registros são Irregulares** após o filtro temático. Isso explica por que o transformer v1 colapsou para a classe majoritária.
+✅ **Hipótese confirmada:** LegalBert-pt supera o baseline com corpus de 5 anos.
 
-Com class weights balanceados automaticamente, o LegalBert-pt v2 obteve:
-- **Irregular**: F1 = 0.96 (excelente — classe bem representada)
-- **Regular com Ressalva**: F1 = 0.53 (razoável — 7 amostras de teste)
-- **Regular**: F1 = 0.00 (apenas 3 amostras no teste — insuficiente para aprender)
+### Evolução com corpus crescente
 
-O baseline TF-IDF ainda supera o transformer (F1 0.67 vs 0.50), resultado coerente com a literatura para corpus pequenos (< 500 amostras de treino). O transformer requer ≥ 5.000 amostras para superar modelos lineares em classificação jurídica.
+| Corpus | Baseline F1 | Transformer F1 | Transformer > Baseline? |
+|---|---|---|---|
+| 2023–2024 (~534 amostras) | 0.67 | 0.50 | ✗ |
+| **2020–2024 (ampliado)** | **0.84** | **0.87** | **✓** |
 
 ---
 
