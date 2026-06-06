@@ -122,4 +122,49 @@ O mapeamento correto (`NUMACORDAO` → `numeroAcordao` etc.) está documentado e
 
 ---
 
+## D-08 — Arquiteturas alternativas para documentos longos (Longformer, BigBird, Mamba)
+
+**Data:** 06/06/2026
+**Decisão:** Avaliar se Longformer, BigBird ou Mamba são substitutos viáveis ao LegalBert-pt
+para o corpus de acórdãos do TCU.
+
+**Alternativas analisadas:**
+
+| Arquitetura | Mecanismo | Comprimento máximo | Disponibilidade PT-BR jurídico |
+|---|---|---|---|
+| A) **Longformer** (`allenai/longformer-base-4096`) | Atenção de janela deslizante + tokens globais | 4.096 tokens | Não existe versão PT-BR |
+| B) **BigBird** (`google/bigbird-roberta-base`) | Atenção esparsa aleatória + janela + global | 4.096 tokens | Não existe versão PT-BR |
+| C) **Mamba** (SSM) | State Space Model — sem mecanismo de atenção | Teórico ilimitado | Não existe versão PT-BR; requer kernels CUDA específicos (`mamba-ssm`) |
+| D) **LegalBert-pt** (`dominguesm/legal-bert-base-cased-ptbr`) | Atenção quadrática completa | 512 tokens | **Pré-treinado em corpus jurídico BR** (STF, petições, decisões) |
+
+**Escolha:** **Manter LegalBert-pt (opção D)** com estratégia head+tail
+
+**Motivo:** A escolha se apoia em três critérios ordenados por prioridade:
+
+1. **Adequação de domínio e língua (determinante):** Longformer, BigBird e Mamba não possuem
+   versões pré-treinadas em português jurídico brasileiro. Utilizá-los exigiria partir de pesos
+   em inglês ou multilinguais (XLM-R), sacrificando a especialização no vocabulário jurídico
+   que é a principal vantagem competitiva do LegalBert-pt sobre BERTimbau base.
+   A literatura de NLP jurídico (Chalkidis et al., 2020; Lage-Freitas et al., 2022) demonstra
+   consistentemente que modelos do domínio superam modelos genéricos mesmo com menos parâmetros.
+
+2. **Eficácia da estratégia head+tail no contexto jurídico (suficiência):** O acórdão do TCU
+   tem estrutura previsível — cabeçalho/contexto no início, Dispositivo no final. A estratégia
+   head+tail (128+382 tokens) captura exatamente as duas regiões mais discriminativas, conforme
+   Sun et al. (2019). O ganho esperado de processar tokens intermediários (argumentação
+   processual) é marginal para a tarefa de predição de desfecho, não justificando a perda de
+   especificidade de língua.
+
+3. **Viabilidade computacional (restrição prática):** Longformer e BigBird exigem ~4× mais
+   memória de GPU que BERT-base para sequências de 4.096 tokens, ultrapassando o limite da
+   GPU T4 do Google Colab com batch size ≥ 8. Mamba requer compilação de extensões CUDA
+   (`mamba-ssm`) incompatíveis com o ambiente Colab padrão.
+
+**Trabalho futuro:** Se surgir um Longformer ou SSM pré-treinado em português jurídico
+(ex.: continuação do projeto LegalBert-pt com arquitetura esparsa), a comparação direta
+seria metodologicamente válida e potencialmente publicável. A ablação 2×2 já documentada
+(TF-IDF × BERT × campo SUMARIO/VOTO) fornece a estrutura experimental para essa extensão.
+
+---
+
 *(Registrar novas decisões aqui durante o desenvolvimento)*
