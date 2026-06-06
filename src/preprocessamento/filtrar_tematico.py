@@ -5,6 +5,7 @@ import csv
 import logging
 import re
 import sys
+import unicodedata
 from pathlib import Path
 
 import pandas as pd
@@ -32,6 +33,7 @@ TERMOS_TEMATICOS = [
 ]
 
 # Colunas mínimas para carregar (Guardrail 2: usecols obrigatório)
+# Nomes canônicos do projeto (camelCase, sem acentos)
 COLUNAS_BASE = [
     "numeroAcordao",
     "anoAcordao",
@@ -42,6 +44,51 @@ COLUNAS_BASE = [
     "relator",
     "dataSessao",
 ]
+
+# Mapeamento normalizado → canônico
+# Normalização: lowercase, sem acentos, sem underscores/hífens/espaços, sem BOM
+# Cobre variações reais do CSV do TCU (camelCase, snake_case, UPPER, acentuado)
+_MAPA_COLUNAS_NORM: dict[str, str] = {
+    # numeroAcordao
+    "numeroacordao": "numeroAcordao",
+    "num_acordao": "numeroAcordao",
+    "numerodoacordao": "numeroAcordao",
+    "numero": "numeroAcordao",
+    # anoAcordao
+    "anoacordao": "anoAcordao",
+    "ano_acordao": "anoAcordao",
+    "ano": "anoAcordao",
+    # tipo
+    "tipo": "tipo",
+    "tipodocumento": "tipo",
+    "tipoacordao": "tipo",
+    # situacao
+    "situacao": "situacao",
+    "situacaodoacordao": "situacao",
+    "status": "situacao",
+    # sumario
+    "sumario": "sumario",
+    "resumo": "sumario",
+    "ementasumario": "sumario",
+    "ementa": "sumario",
+    # colegiado
+    "colegiado": "colegiado",
+    "orgao": "colegiado",
+    "orgaocolegiado": "colegiado",
+    # relator
+    "relator": "relator",
+    "ministrorelator": "relator",
+    # dataSessao
+    "datasessao": "dataSessao",
+    "data": "dataSessao",
+    "datadajulgamento": "dataSessao",
+    "datajulgamento": "dataSessao",
+    # urlArquivoPDF
+    "urlarquivopdf": "urlArquivoPDF",
+    "url": "urlArquivoPDF",
+    "urlpdf": "urlArquivoPDF",
+    "linkpdf": "urlArquivoPDF",
+}
 
 # Regex para extrair label do sumario quando não há campo estruturado
 _RE_DESFECHO = re.compile(
@@ -57,41 +104,78 @@ _MAPA_LABEL = {
 }
 
 
+def _normalizar_nome(nome: str) -> str:
+    """Normaliza nome de coluna: lowercase, sem BOM/acentos/separadores."""
+    nome = nome.strip().lstrip("﻿")  # strip BOM
+    nome = nome.lower()
+    # remover acentos via NFD decomposition
+    nome = unicodedata.normalize("NFD", nome)
+    nome = "".join(c for c in nome if not unicodedata.combining(c))
+    # remover underscores, hífens, espaços, pontos
+    nome = re.sub(r"[\s_\-\.]", "", nome)
+    return nome
+
+
+def _mapear_colunas(colunas_reais: list[str]) -> dict[str, str]:
+    """Retorna {nome_real: nome_canônico} para colunas que casam no mapeamento."""
+    mapeamento = {}
+    for col in colunas_reais:
+        norm = _normalizar_nome(col)
+        if norm in _MAPA_COLUNAS_NORM:
+            mapeamento[col] = _MAPA_COLUNAS_NORM[norm]
+    return mapeamento
+
+
 def _detectar_separador(arquivo_csv: Path) -> str:
     """Lê as primeiras linhas do CSV para detectar o separador real.
 
-    O CSV do TCU usa ponto-e-vírgula (;) como separador. Detectar
+    O CSV do TCU usa ponto-e-vírgula (;) ou pipe (|) como separador. Detectar
     automaticamente evita depender de sep=None + engine='python',
     que impõe um limite de 131 072 bytes por campo.
 
     Returns:
-        Separador detectado: ',' ou ';' (padrão ';' se inconclusivo).
+        Separador detectado: ',', ';', '|' ou '\t' (padrão ';' se inconclusivo).
     """
-    try:
-        with open(arquivo_csv, "r", encoding="utf-8", errors="replace") as f:
-            amostra = f.read(4096)
-        dialect = csv.Sniffer().sniff(amostra, delimiters=",;|\t")
-        return dialect.delimiter
-    except csv.Error:
-        return ";"
+    for enc in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            with open(arquivo_csv, "r", encoding=enc, errors="replace") as f:
+                amostra = f.read(8192)
+            dialect = csv.Sniffer().sniff(amostra, delimiters=",;|\t")
+            logger.debug("Separador detectado com enc=%s: %r", enc, dialect.delimiter)
+            return dialect.delimiter
+        except csv.Error:
+            continue
+    return ";"
 
 
 def inspecionar_colunas(arquivo_csv: Path) -> list[str]:
     """Lê apenas o cabeçalho do CSV para identificar colunas disponíveis.
 
+    Tenta múltiplos encodings (utf-8-sig, utf-8, latin-1) e normaliza
+    nomes de coluna para remover BOM e espaços extras.
+
     Args:
         arquivo_csv: Caminho do CSV do TCU.
 
     Returns:
-        Lista de nomes de colunas.
+        Lista de nomes de colunas (sem BOM, sem espaços extras).
     """
     sep = _detectar_separador(arquivo_csv)
-    df_cabecalho = pd.read_csv(
-        arquivo_csv, nrows=0, encoding="utf-8", sep=sep, engine="c"
-    )
-    colunas = df_cabecalho.columns.tolist()
-    logger.info("Colunas encontradas (%d) | sep=%r: %s", len(colunas), sep, colunas)
-    return colunas
+    for enc in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            df_cab = pd.read_csv(
+                arquivo_csv, nrows=0, encoding=enc, sep=sep, engine="c"
+            )
+            colunas = [c.strip().lstrip("﻿") for c in df_cab.columns.tolist()]
+            logger.info(
+                "Colunas (%d) | sep=%r | enc=%s:\n  %s",
+                len(colunas), sep, enc,
+                "\n  ".join(colunas) if colunas else "(nenhuma)",
+            )
+            return colunas
+        except Exception as exc:
+            logger.warning("Falha ao inspecionar enc=%s: %s", enc, exc)
+    return []
 
 
 def _filtrar_tematico(df: pd.DataFrame, col_texto: str) -> pd.DataFrame:
@@ -116,8 +200,10 @@ def _extrair_label(df: pd.DataFrame) -> pd.DataFrame:
         )
         if mapeados.notna().mean() > 0.3:
             df["label"] = mapeados
-            logger.info("Label extraída do campo 'tipo' (%.0f%% preenchidos).",
-                        mapeados.notna().mean() * 100)
+            logger.info(
+                "Label extraída do campo 'tipo' (%.0f%% preenchidos).",
+                mapeados.notna().mean() * 100,
+            )
             return df
 
     # Tentativa 2: campo situacao
@@ -127,8 +213,10 @@ def _extrair_label(df: pd.DataFrame) -> pd.DataFrame:
         )
         if mapeados.notna().mean() > 0.3:
             df["label"] = mapeados
-            logger.info("Label extraída do campo 'situacao' (%.0f%% preenchidos).",
-                        mapeados.notna().mean() * 100)
+            logger.info(
+                "Label extraída do campo 'situacao' (%.0f%% preenchidos).",
+                mapeados.notna().mean() * 100,
+            )
             return df
 
     # Tentativa 3: regex no sumario
@@ -143,7 +231,9 @@ def _extrair_label(df: pd.DataFrame) -> pd.DataFrame:
 
     df["label"] = df["sumario"].apply(_extrair_regex)
     cobertura = df["label"].notna().mean()
-    logger.info("Label extraída via regex no 'sumario' (%.0f%% preenchidos).", cobertura * 100)
+    logger.info(
+        "Label extraída via regex no 'sumario' (%.0f%% preenchidos).", cobertura * 100
+    )
     return df
 
 
@@ -151,6 +241,8 @@ def filtrar_acordaos(arquivo_csv: Path, col_texto: str = "sumario") -> pd.DataFr
     """Carrega, filtra tematicamente e extrai labels de um CSV do TCU.
 
     Usa usecols para não carregar o arquivo inteiro na RAM (Guardrail 2).
+    Mapeia automaticamente nomes de colunas reais para os nomes canônicos
+    do projeto, cobrindo variações de BOM, acentos, case e separadores.
 
     Args:
         arquivo_csv: Caminho do CSV anual do TCU.
@@ -160,33 +252,83 @@ def filtrar_acordaos(arquivo_csv: Path, col_texto: str = "sumario") -> pd.DataFr
         DataFrame filtrado com coluna 'label' adicionada.
     """
     # Detectar separador e colunas disponíveis
-    colunas_disponiveis = inspecionar_colunas(arquivo_csv)
-    usecols = [c for c in COLUNAS_BASE if c in colunas_disponiveis]
-
-    for col_extra in ("urlArquivoPDF", "texto_voto_simulado"):
-        if col_extra in colunas_disponiveis:
-            usecols.append(col_extra)
-
+    colunas_reais = inspecionar_colunas(arquivo_csv)
     sep = _detectar_separador(arquivo_csv)
-    logger.info("Carregando colunas (sep=%r): %s", sep, usecols)
-    df = pd.read_csv(
-        arquivo_csv,
-        usecols=usecols,
-        encoding="utf-8",
-        sep=sep,
-        engine="c",          # engine C não tem limite de tamanho de campo
-        on_bad_lines="warn", # registrar linhas malformadas sem parar
-    )
-    logger.info("Carregados %d acórdãos do arquivo %s.", len(df), arquivo_csv.name)
+
+    if not colunas_reais:
+        raise ValueError(f"Não foi possível ler o cabeçalho de {arquivo_csv.name}")
+
+    # Mapear nomes reais → canônicos
+    mapeamento = _mapear_colunas(colunas_reais)
+    logger.info("Mapeamento de colunas: %s", mapeamento)
+
+    if not mapeamento:
+        # Nenhuma coluna reconhecida — mostrar colunas reais para diagnóstico
+        logger.error(
+            "NENHUMA coluna reconhecida em %s.\n"
+            "Colunas reais encontradas:\n  %s\n"
+            "Adicione entradas a _MAPA_COLUNAS_NORM para cobri-las.",
+            arquivo_csv.name,
+            "\n  ".join(colunas_reais),
+        )
+        raise ValueError(
+            f"Colunas do CSV não reconhecidas: {colunas_reais[:10]}. "
+            "Veja o log acima e atualize _MAPA_COLUNAS_NORM."
+        )
+
+    # Selecionar colunas reais que foram reconhecidas
+    usecols_reais = list(mapeamento.keys())
+
+    # Incluir colunas extras opcionais
+    for col_extra_canonico in ("urlArquivoPDF", "texto_voto_simulado"):
+        # Procurar se há coluna real que mapeia para esse canônico
+        for col_r, col_c in mapeamento.items():
+            if col_c == col_extra_canonico and col_r not in usecols_reais:
+                usecols_reais.append(col_r)
+
+    # Tentar múltiplos encodings para leitura completa
+    df = None
+    for enc in ("utf-8-sig", "utf-8", "latin-1"):
+        try:
+            logger.info("Carregando %d colunas com enc=%s sep=%r...", len(usecols_reais), enc, sep)
+            df = pd.read_csv(
+                arquivo_csv,
+                usecols=usecols_reais,
+                encoding=enc,
+                sep=sep,
+                engine="c",
+                on_bad_lines="warn",
+            )
+            break
+        except Exception as exc:
+            logger.warning("Falha ao carregar com enc=%s: %s", enc, exc)
+
+    if df is None:
+        raise RuntimeError(f"Não foi possível carregar {arquivo_csv.name} com nenhum encoding.")
+
+    # Renomear colunas para nomes canônicos
+    df = df.rename(columns=mapeamento)
+    # Strip BOM/whitespace nos nomes de coluna que restaram
+    df.columns = [c.strip().lstrip("﻿") for c in df.columns]
+
+    logger.info("Carregados %d acórdãos de %s.", len(df), arquivo_csv.name)
     logger.info("Uso de memória: %.1f MB", df.memory_usage(deep=True).sum() / 1e6)
+    logger.info("Colunas após renomeação: %s", df.columns.tolist())
 
     # Filtro temático
     col_filtro = col_texto if col_texto in df.columns else "sumario"
+    if col_filtro not in df.columns:
+        disponíveis = df.columns.tolist()
+        raise KeyError(
+            f"Coluna de texto '{col_filtro}' não encontrada. "
+            f"Colunas disponíveis: {disponíveis}"
+        )
+
     df_filtrado = _filtrar_tematico(df, col_filtro)
     logger.info(
         "Após filtro temático: %d acórdãos (%.1f%% do total).",
         len(df_filtrado),
-        len(df_filtrado) / len(df) * 100,
+        len(df_filtrado) / len(df) * 100 if len(df) > 0 else 0,
     )
     del df  # liberar memória
 
@@ -196,7 +338,11 @@ def filtrar_acordaos(arquivo_csv: Path, col_texto: str = "sumario") -> pd.DataFr
     # Remover registros sem label
     antes = len(df_filtrado)
     df_filtrado = df_filtrado[df_filtrado["label"].notna()].copy()
-    logger.info("Removidos %d registros sem label. Total final: %d.", antes - len(df_filtrado), len(df_filtrado))
+    logger.info(
+        "Removidos %d registros sem label. Total final: %d.",
+        antes - len(df_filtrado),
+        len(df_filtrado),
+    )
 
     return df_filtrado
 
@@ -228,7 +374,9 @@ def combinar_anos(anos: list[int], destino_raw: Path = DATA_RAW) -> pd.DataFrame
 
     df_total = pd.concat(partes, ignore_index=True)
     logger.info("Total combinado: %d acórdãos.", len(df_total))
-    logger.info("Distribuição de labels:\n%s", df_total["label"].value_counts().to_string())
+    logger.info(
+        "Distribuição de labels:\n%s", df_total["label"].value_counts().to_string()
+    )
     return df_total
 
 
@@ -237,8 +385,11 @@ if __name__ == "__main__":
         description="Filtra acórdãos do TCU por tema (saúde/educação) e extrai labels"
     )
     parser.add_argument("--anos", type=int, nargs="+", default=[2023, 2024])
-    parser.add_argument("--inspecionar", action="store_true",
-                        help="Apenas inspeciona colunas do CSV sem filtrar")
+    parser.add_argument(
+        "--inspecionar",
+        action="store_true",
+        help="Apenas inspeciona colunas do CSV sem filtrar",
+    )
     args = parser.parse_args()
 
     DATA_INTERIM.mkdir(parents=True, exist_ok=True)
@@ -248,7 +399,10 @@ if __name__ == "__main__":
             arquivo = DATA_RAW / f"acordao-completo-{ano}.csv"
             if arquivo.exists():
                 colunas = inspecionar_colunas(arquivo)
-                print(f"\n{arquivo.name}: {colunas}")
+                mapa = _mapear_colunas(colunas)
+                print(f"\n{arquivo.name}:")
+                print(f"  Colunas reais ({len(colunas)}): {colunas}")
+                print(f"  Mapeamento reconhecido: {mapa}")
     else:
         df = combinar_anos(args.anos)
         saida = DATA_INTERIM / "acordaos_filtrados.parquet"
