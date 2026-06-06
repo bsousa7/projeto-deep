@@ -1,13 +1,12 @@
-"""Gerador do artigo científico (v2) — revisado conforme parecer técnico.
+"""Gerador do artigo científico (v3) — evoluído conforme ementa Aulas 07 e 08.
 
-Correções implementadas:
-- Assimetria de entradas reconhecida; ablação simétrica proposta (Tabela 3)
-- Tabela 2 corrigida com contagens reais do corpus
-- Per-class metrics adicionados (Tabela 4)
-- K-Fold e IC 95% documentados como protocolo de validação
-- LIME reestruturado: aplicação ao Transformer como trabalho futuro
-- Seção de ameaças à validade adicionada
-- Conclusão redireciona para periódicos de Computação Jurídica
+Evoluções implementadas (v2 → v3):
+- Tabela 5: matriz de custo-benefício financeiro (Aula 07 — métricas alinhadas ao negócio)
+- Seção 4.5: proposta PEFT/LoRA para viabilizar K-Fold no Transformer (Aula 08)
+- Seção 5.3 expandida: F1-macro vs. impacto fiscal e threshold de decisão
+- Seção 5.1 atualizada: LoRA como solução para o problema de semente única
+- Seção 6 (Trabalhos Futuros) atualizada com LoRA e otimização de threshold
+- Referência HU et al. (2022) adicionada
 
 Saída: resultados/artigo_jurimetria_tcu.pdf
 """
@@ -169,6 +168,31 @@ def _tab4_por_classe():
     est.add("BACKGROUND", (0, 3), (-1, 3), colors.HexColor("#fee2e2"))
     est.add("FONTNAME",   (0, 4), (-1, 4), "Times-Bold")
     return Table(dados, colWidths=[4.0*cm, 2.2*cm, 2.0*cm, 2.2*cm, 1.8*cm, 2.6*cm],
+                 style=est, repeatRows=1)
+
+
+def _tab5_custo():
+    """Tabela 5 — Assimetria de custo entre os tipos de erro de classificação."""
+    VERMELHO_CLARO = colors.HexColor("#fee2e2")
+    VERDE_CLARO    = colors.HexColor("#dcfce7")
+    dados = [
+        ["Tipo de Erro", "Predição\ndo Modelo", "Situação\nReal",
+         "Consequência ao Erário Público", "Custo Relativo"],
+        ["Falso Negativo (FN)", "Regular ou\nRessalva", "Irregular",
+         "Desvio não detectado; gestor não punido;\nressarcimento não exigido ao erário",
+         "ALTO — impacto\nfiscal direto"],
+        ["Falso Positivo (FP)", "Irregular", "Regular",
+         "Auditoria aprofundada desnecessária;\ncusto operacional do TCU",
+         "BAIXO — custo\nadministrativo"],
+    ]
+    est = _estilo_tabela(colors.HexColor("#7f1d1d"))
+    est.add("BACKGROUND", (0, 1), (-1, 1), VERMELHO_CLARO)
+    est.add("BACKGROUND", (0, 2), (-1, 2), VERDE_CLARO)
+    est.add("FONTNAME",   (4, 1), (4, 1),  "Times-Bold")
+    est.add("TEXTCOLOR",  (4, 1), (4, 1),  VERMELHO)
+    est.add("FONTNAME",   (4, 2), (4, 2),  "Times-Bold")
+    est.add("TEXTCOLOR",  (4, 2), (4, 2),  VERDE)
+    return Table(dados, colWidths=[3.5*cm, 2.5*cm, 2.0*cm, 5.5*cm, 2.5*cm],
                  style=est, repeatRows=1)
 
 
@@ -400,6 +424,24 @@ def _historia(st):
           "positivos — configuração favorável em contextos de auditoria, onde o custo "
           "de perder uma irregularidade supera o custo de um alarme falso.",
           st["corpo"]),
+        P("A Tabela 5 formaliza essa assimetria de custo, alinhando as métricas "
+          "estatísticas aos objetivos de governança do TCU.", st["corpo"]),
+        S(1, 4),
+        _tab5_custo(),
+        P("<i>Tabela 5</i> — Assimetria de custo entre erros de classificação no "
+          "contexto de auditoria pública. O Falso Negativo (deixar passar uma "
+          "irregularidade) tem impacto fiscal direto ao erário; o Falso Positivo "
+          "gera apenas custo operacional de auditoria.", st["nota"]),
+        S(1, 6),
+        P("Traduzindo para o contexto do corpus: a revocação macro do Transformer "
+          "(0,9174) implica taxa média de Falsos Negativos de ≈8,3%, contra ≈20,2% "
+          "do baseline — redução de aproximadamente 60% na proporção de irregularidades "
+          "não detectadas. Em termos práticos, para cada 100 acórdãos irregulares "
+          "submetidos ao modelo, o Transformer 'deixa passar' cerca de 8, contra 20 "
+          "do baseline. Considerando que as condenações do TCU em saúde e educação "
+          "envolvem regularmente valores acima de R$ 100 mil (TCU, 2024), a diferença "
+          "de revocação representa um retorno sobre o investimento mensurável na "
+          "implantação da solução de Deep Learning.", st["corpo"]),
         P("4.2 Efeito do Volume de Dados e Diversidade Temporal", st["subsecao"]),
         P("A Tabela 2 apresenta a evolução dos resultados por janela temporal, com "
           "contagens precisas dos conjuntos de dados.", st["corpo"]),
@@ -458,7 +500,35 @@ def _historia(st):
           "Essa verificação requer execução de K-Fold para o Transformer (custo "
           "computacional elevado: ~5× o custo de um único treinamento), proposta "
           "como prioridade no ciclo seguinte de experimentos.", st["corpo"]),
-        P("4.5 Explicabilidade: Aplicação ao Modelo e Redesign", st["subsecao"]),
+        P("4.5 Eficiência Computacional: PEFT/LoRA como Caminho para K-Fold no Transformer",
+          st["subsecao"]),
+        P("O fine-tuning completo (Full Fine-Tuning) do LegalBert-pt atualiza todos os "
+          "110 milhões de parâmetros do modelo a cada época de treinamento. Na GPU "
+          "Tesla T4 (Google Colab), um único ciclo de fine-tuning (5 épocas, batch=16) "
+          "já exige memória e tempo consideráveis sobre o corpus de ~374 amostras de "
+          "treino. A execução do K-Fold com 5 folds multiplicaria esse custo por um "
+          "fator de cinco, tornando a validação cruzada inviável nas restrições de "
+          "tempo e memória do ambiente padrão de desenvolvimento.", st["corpo"]),
+        P("A solução prevista para o próximo ciclo de experimentos é a adoção de "
+          "Parameter-Efficient Fine-Tuning (PEFT), especificamente o LoRA "
+          "(Low-Rank Adaptation; HU et al., 2022). O LoRA congela os pesos originais "
+          "do BERT e injeta matrizes de baixa ordem (rank r = 8–16) nas camadas de "
+          "atenção, substituindo a atualização completa W por uma decomposição de "
+          "baixo posto ΔW = BA, onde B ∈ ℝ<super>d×r</super> e "
+          "A ∈ ℝ<super>r×k</super>. Com r = 8, o número de parâmetros treináveis "
+          "cai de 110M para aproximadamente 300K — redução de 99,7% — sem degradação "
+          "significativa de performance reportada na literatura (HU et al., 2022).",
+          st["corpo"]),
+        P("O argumento científico para esta escolha é direto: ao congelar os pesos "
+          "base, o LoRA permite inicializar apenas os adaptadores a cada fold, "
+          "mantendo o backbone em memória entre os folds. Isso viabiliza a execução "
+          "de K-Fold (5 folds) no T4 com tempo comparável a um único treinamento "
+          "completo, resolvendo o problema de variância amostral identificado na "
+          "Seção 5.1 sem incorrer em custos computacionais proibitivos. O QLoRA "
+          "(Quantized LoRA) representa extensão adicional — quantização dos pesos base "
+          "para 4 bits com Double Quantization —, relevante se modelos maiores "
+          "(ex.: LegalBert-pt-large) forem incluídos em ciclos futuros.", st["corpo"]),
+        P("4.6 Explicabilidade: Aplicação ao Modelo e Redesign", st["subsecao"]),
         P("Conforme apontado em revisão, o uso de LIME sobre o modelo de regressão "
           "logística é redundante: modelos lineares já disponibilizam coeficientes "
           "nativos que expressam a importância de cada feature. O LIME foi aplicado "
@@ -485,10 +555,13 @@ def _historia(st):
           "estimador de F1-macro é elevada. Diferenças de 3 pontos percentuais "
           "podem não ser estatisticamente significativas sem teste formal (McNemar).",
           st["corpo"]),
-        P("<b>Semente única:</b> os resultados foram obtidos com RANDOM_STATE=42 "
-          "para o split e seed=42 para o Trainer. Múltiplas sementes ou K-Fold "
-          "para o Transformer são necessários para garantir reprodutibilidade robusta.",
-          st["corpo"]),
+        P("<b>Semente única e custo do K-Fold:</b> os resultados foram obtidos com "
+          "RANDOM_STATE=42 para o split e seed=42 para o Trainer. Múltiplas sementes "
+          "ou K-Fold para o Transformer são necessários para garantir reprodutibilidade "
+          "robusta. A limitação é computacional: o Full Fine-Tuning (110M parâmetros) "
+          "torna o K-Fold proibitivo no T4. A adoção de LoRA (HU et al., 2022) — "
+          "redução para ~300K parâmetros treináveis — é a mitigação planejada, "
+          "conforme detalhado na Seção 4.5.", st["corpo"]),
         P("5.2 Validade Externa", st["subsecao"]),
         P("<b>Escopo temático:</b> o corpus cobre apenas saúde e educação. A "
           "generalização para outras áreas do TCU (infraestrutura, defesa, previdência) "
@@ -501,12 +574,26 @@ def _historia(st):
           "cauda), essas arquiteturas têm potencial de ganho adicional.",
           st["corpo"]),
         P("5.3 Validade de Constructo", st["subsecao"]),
-        P("O F1-macro pondera igualmente as três classes. Em uma aplicação real de "
-          "radar jurimétrico, a classe 'Irregular' tem peso econômico maior: erros "
-          "nessa classe geram impacto fiscal direto. Uma função de perda personalizada "
-          "ponderando economicamente as classes ou a adoção de Focal Loss "
-          "(LIN et al., 2017) pode estar mais alinhada com os objetivos de negócio "
-          "do que a otimização direta do F1-macro.", st["corpo"]),
+        P("O F1-macro pondera igualmente as três classes. Embora atue como guardrail "
+          "estatístico para o desbalanceamento, ele falha em capturar a assimetria de "
+          "impacto financeiro no setor público. Alinhando o modelo aos objetivos de "
+          "governança do TCU — formalizados na Tabela 5 —, análises subsequentes devem "
+          "incorporar matrizes de custo-benefício customizadas, onde o peso de um "
+          "Falso Negativo (negligenciar um desvio na saúde ou educação) supere "
+          "substancialmente a penalidade de um Falso Positivo, otimizando o limiar "
+          "de decisão da rede neural para além das métricas macro tradicionais.",
+          st["corpo"]),
+        P("Na prática, isso se traduz em ajustar o threshold de classificação abaixo "
+          "de 0,5 para a classe 'Irregular': ao aceitar mais Falsos Positivos "
+          "controláveis, o modelo reduz drasticamente os Falsos Negativos de alto "
+          "custo fiscal. Uma função de perda personalizada com pesos econômicos por "
+          "classe — ou a adoção de Focal Loss (LIN et al., 2017), que penaliza "
+          "exemplos mal classificados com confiança elevada — pode estar mais alinhada "
+          "com os objetivos de negócio do TCU do que a otimização direta do F1-macro. "
+          "Essa otimização de threshold tem custo computacional nulo (não requer "
+          "re-treinamento) e pode ser implementada sobre o modelo já treinado, "
+          "usando o conjunto de validação para calibrar o ponto ótimo de corte.",
+          st["corpo"]),
 
         # ── 6. CONCLUSÃO ─────────────────────────────────────────────
         P("6 CONCLUSÃO", st["secao"]),
@@ -528,10 +615,15 @@ def _historia(st):
           "(~374 amostras), sugerindo que a <i>diversidade temporal</i> — e não o "
           "volume — é o fator determinante nesse domínio.", st["corpo"]),
         P("Trabalhos futuros prioritários: (i) completar a ablação 2×2 (Tabela 3); "
-          "(ii) K-Fold para o Transformer com múltiplas sementes; (iii) LIME/SHAP "
-          "sobre o Transformer fine-tunado; (iv) avaliar Longformer para documentos "
-          "com >512 tokens relevantes no corpo; e (v) incorporar Focal Loss para "
-          "alinhamento com objetivos de negócio de auditoria.", st["corpo"]),
+          "(ii) K-Fold para o Transformer via PEFT/LoRA (HU et al., 2022) — ao "
+          "reduzir os parâmetros treináveis de 110M para ~300K, o LoRA viabiliza a "
+          "execução dos 5 folds no T4, garantindo a robustez estatística necessária "
+          "para homologação do Radar Jurimétrico em ambiente de produção; "
+          "(iii) LIME/SHAP sobre o Transformer fine-tunado; (iv) otimização de "
+          "threshold de decisão com matriz de custo-benefício financeiro (Tabela 5), "
+          "priorizando revocação da classe 'Irregular' sem re-treinamento; e "
+          "(v) avaliar Focal Loss (LIN et al., 2017) para alinhamento com os "
+          "objetivos de governança do TCU.", st["corpo"]),
         P("Quanto ao direcionamento editorial: o artigo possui valor elevado para "
           "periódicos focados em <i>Computação Jurídica</i>, <i>Jurimetria</i> e "
           "<i>IA no Setor Público</i> — como o <i>Journal of Digital Government</i>, "
@@ -553,6 +645,9 @@ def _historia(st):
           "on Brazilian legal corpus.</b> HuggingFace Hub, 2022. Disponível em: "
           "&lt;https://huggingface.co/dominguesm/legal-bert-base-cased-ptbr&gt;. "
           "Acesso em: 5 jun. 2026.", st["ref"]),
+        P("HU, Edward J. et al. <b>LoRA: low-rank adaptation of large language "
+          "models.</b> In: INTERNATIONAL CONFERENCE ON LEARNING REPRESENTATIONS, "
+          "2022, online. <i>Proceedings…</i> [S.l.]: OpenReview, 2022.", st["ref"]),
         P("LAGE-FREITAS, André et al. <b>Predicting Brazilian court decisions.</b> "
           "<i>PeerJ Computer Science</i>, [s.l.], v. 8, e904, 2022.", st["ref"]),
         P("LIN, Tsung-Yi et al. <b>Focal loss for dense object detection.</b> In: "
