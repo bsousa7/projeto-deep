@@ -62,14 +62,26 @@ Após filtro temático (saúde/SUS/educação/FNDE): **~2.000–4.000 acórdãos
 
 ## Resultados
 
-> Resultados abaixo com **dados sintéticos** (validação de pipeline — `src/aquisicao/gerar_mock.py`).  
-> Executar com CSVs reais do TCU no Colab GPU para métricas definitivas.
+> Métricas obtidas com **CSVs reais do TCU** (2023–2024), corpus de ~534 acórdãos temáticos
+> (saúde + educação) após filtro. Fine-tuning executado no Google Colab (GPU Tesla T4).
 
-| Modelo | Campo de texto | F1-macro | Obs. |
-|---|---|---|---|
-| TF-IDF + LogisticRegression | `sumario` (c/ veredicto) | ~1.00 | Veredicto literal no campo — esperado |
-| TF-IDF + LinearSVC | `voto_simulado` (s/ veredicto) | ~0.98 | Cenário realista (campo voto) |
-| **LegalBert-pt head+tail** | `voto_simulado` | _pendente GPU_ | Executar no Colab — código em `src/modelos/transformer.py` |
+| Modelo | Campo | F1-macro | Acurácia | Obs. |
+|---|---|---|---|---|
+| TF-IDF + LogisticRegression | `SUMARIO` | **0.6705** | 92.6% | Baseline sólido para corpus pequeno |
+| **LegalBert-pt head+tail** | `VOTO` | 0.3114 | 87.6% | Colapso para classe majoritária — corpus insuficiente |
+
+**Análise:** O transformer teve desempenho inferior ao baseline, resultado coerente com a
+literatura para corpora pequenos (< 1.000 amostras). O recall_macro = 0.33 indica que o modelo
+colapsou para a classe majoritária ("Regular", ~55% dos dados). Causas prováveis:
+
+1. **Corpus reduzido** (~373 amostras de treino) — transformers precisam de ≥ 5.000 amostras
+2. **Desbalanceamento** não compensado por class weights
+3. **Campo `VOTO`** muito longo; head+tail pode não capturar o trecho discriminativo
+
+**Próximos passos para superar o baseline:**
+- Ampliar para 2020–2024 (maior corpus temático)
+- Adicionar `class_weight='balanced'` no fine-tuning
+- Testar frozen base + apenas cabeça classificadora
 
 ---
 
@@ -81,8 +93,8 @@ Após filtro temático (saúde/SUS/educação/FNDE): **~2.000–4.000 acórdãos
 | D-02 | Modelo Transformer | LegalBert-pt | Corpus jurídico BR |
 | D-03 | Métrica principal | F1-macro | Penaliza desbalanceamento |
 | D-04 | Filtro temático | Termos no `sumario` | Independente do órgão |
-| D-05 | Campo de label | `situacao` | 100% preenchido, desfecho estruturado |
-| D-06 | Campo de texto | `sumario` (MVP) | CSV não tem `voto`; PDFs como extensão |
+| D-05 | Campo de label | Regex em `ACORDAO`/`SUMARIO` | `SITUACAO` contém status processual, não veredicto |
+| D-06 | Campo de texto | `SUMARIO` (baseline) / `VOTO` (BERT) | `VOTO` disponível diretamente no CSV (col. 29)! |
 
 Ver detalhes em `docs/decisoes.md`.
 
