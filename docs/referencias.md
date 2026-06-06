@@ -26,6 +26,10 @@ DOMINGUES, Luciano. **legal-bert-base-cased-ptbr: BERT model pre-trained on Braz
 
 SUN, Chi; QIU, Xipeng; XU, Yuanbin; HUANG, Xuanjing. **How to Fine-Tune BERT for Text Classification?** In: CHINESE COMPUTATIONAL LINGUISTICS, 18., 2019, Kunming. *Proceedings...* Cham: Springer, 2019. p. 194–206.
 
+HU, Edward J. et al. **LoRA: Low-Rank Adaptation of Large Language Models**. In: INTERNATIONAL CONFERENCE ON LEARNING REPRESENTATIONS, 2022, online. *Proceedings...* [S.l.]: OpenReview, 2022.
+
+LIN, Tsung-Yi et al. **Focal Loss for Dense Object Detection**. In: IEEE INTERNATIONAL CONFERENCE ON COMPUTER VISION, 2017, Veneza. *Proceedings...* [S.l.]: IEEE, 2017. p. 2980–2988.
+
 PEDREGOSA, Fabian et al. **Scikit-learn: machine learning in Python.** *Journal of Machine Learning Research*, Cambridge, v. 12, p. 2825–2830, 2011.
 
 RIBEIRO, Marco Tulio; SINGH, Sameer; GUESTRIN, Carlos. **"Why should I trust you?": explaining the predictions of any classifier.** In: ACM SIGKDD INTERNATIONAL CONFERENCE ON KNOWLEDGE DISCOVERY AND DATA MINING, 22., 2016, San Francisco. *Proceedings…* New York: ACM, 2016. p. 1135–1144.

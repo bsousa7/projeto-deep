@@ -100,7 +100,7 @@ def _bullet(c: canvas.Canvas, x: float, y: float, texto: str,
     return y - len(linhas) * (tamanho * 0.052 * cm) - 0.15 * cm
 
 
-def _numero_slide(c: canvas.Canvas, n: int, total: int = 12) -> None:
+def _numero_slide(c: canvas.Canvas, n: int, total: int = 14) -> None:
     c.setFillColor(BRANCO)
     c.setFont("Helvetica", 8)
     c.drawRightString(W - MARGIN, 0.22 * cm, f"{n}/{total}")
@@ -872,7 +872,7 @@ def slide_conclusao(c: canvas.Canvas) -> None:
     """Slide 12 — Conclusão e próximos passos."""
     _fundo_padrao(c)
     _titulo_barra(c, "Conclusão: Radar Jurimétrico Preditivo")
-    _numero_slide(c, 12)
+    _numero_slide(c, 14)
 
     y = H - 2.8 * cm
 
@@ -959,10 +959,193 @@ def slide_conclusao(c: canvas.Canvas) -> None:
     c.showPage()
 
 
+def slide_custo(c: canvas.Canvas) -> None:
+    """Slide 12 — Aula 07: Alinhamento ao negócio — matriz de custo."""
+    _fundo_padrao(c)
+    _titulo_barra(c, "Aula 07 — Alinhamento ao Negócio: Custo Assimétrico de Erros")
+    _numero_slide(c, 12)
+
+    y = H - 2.8 * cm
+
+    # Tabela de custo
+    _secao_tag(c, "MATRIZ DE CUSTO — POR QUE REVOCAÇÃO IMPORTA MAIS QUE PRECISÃO", MARGIN, y, VERMELHO)
+    y -= 0.8 * cm
+
+    col_w = [(W - 2 * MARGIN) * p for p in [0.22, 0.18, 0.18, 0.28, 0.14]]
+    headers = ["Tipo de Erro", "Predição", "Realidade", "Consequência ao Erário", "Custo"]
+    rows = [
+        ["Falso Negativo (FN)", "Regular", "Irregular",
+         "Desvio não detectado — gestor não punido", "ALTO ★"],
+        ["Falso Positivo (FP)", "Irregular", "Regular",
+         "Auditoria desnecessária — custo operacional", "BAIXO"],
+    ]
+    row_h_t = 0.58 * cm
+
+    bx2 = MARGIN
+    c.setFillColor(colors.HexColor("#7f1d1d"))
+    c.rect(bx2, y - row_h_t, sum(col_w), row_h_t, fill=1, stroke=0)
+    for i, h in enumerate(headers):
+        c.setFillColor(BRANCO); c.setFont("Helvetica-Bold", 8)
+        c.drawString(bx2 + 0.1 * cm, y - row_h_t + 0.14 * cm, h)
+        bx2 += col_w[i]
+    y -= row_h_t
+
+    bgs = [colors.HexColor("#fee2e2"), colors.HexColor("#dcfce7")]
+    custo_cores = [VERMELHO, VERDE]
+    for ri, row in enumerate(rows):
+        bx2 = MARGIN
+        c.setFillColor(bgs[ri])
+        c.rect(MARGIN, y - row_h_t, sum(col_w), row_h_t, fill=1, stroke=0)
+        for ci, val in enumerate(row):
+            c.setFillColor(custo_cores[ri] if ci == 4 else CINZA_ESCURO)
+            c.setFont("Helvetica-Bold" if ci in (0, 4) else "Helvetica", 8)
+            c.drawString(bx2 + 0.1 * cm, y - row_h_t + 0.14 * cm, val)
+            bx2 += col_w[ci]
+        y -= row_h_t
+
+    y -= 0.6 * cm
+
+    # Painel esquerdo — comparação de revocação
+    lx = MARGIN
+    _caixa(c, lx, y - 3.8 * cm, (W - 3 * MARGIN) / 2, 3.8 * cm,
+           bg=AZUL_CLARO, borda=AZUL_MEDIO)
+
+    c.setFillColor(AZUL_ESCURO)
+    c.setFont("Helvetica-Bold", 10)
+    c.drawString(lx + 0.3 * cm, y - 0.5 * cm, "Redução de Falsos Negativos")
+
+    modelos_rev = [("Baseline (TF-IDF)", "0.7981", "≈20% FN", AZUL_MEDIO),
+                   ("LegalBert-pt", "0.9174", "≈8% FN", VERDE)]
+    yb = y - 1.0 * cm
+    for nome, rev, fn, cor in modelos_rev:
+        c.setFillColor(cor); c.setFont("Helvetica-Bold", 10)
+        c.drawString(lx + 0.3 * cm, yb, f"  {rev}")
+        c.setFillColor(CINZA_ESCURO); c.setFont("Helvetica", 9)
+        c.drawString(lx + 1.8 * cm, yb, f"  {nome}  ({fn})")
+        yb -= 0.55 * cm
+
+    c.setFillColor(VERDE); c.setFont("Helvetica-Bold", 12)
+    c.drawString(lx + 0.3 * cm, yb - 0.2 * cm, "→  60% menos FN com o Transformer")
+    c.setFillColor(CINZA_ESCURO); c.setFont("Helvetica", 8)
+    c.drawString(lx + 0.3 * cm, yb - 0.65 * cm, "Em 100 contas irregulares: deixa passar 8 vs. 20")
+
+    # Painel direito — ROI
+    rx = MARGIN + (W - 3 * MARGIN) / 2 + MARGIN
+    _caixa(c, rx, y - 3.8 * cm, W - rx - MARGIN, 3.8 * cm,
+           bg=colors.HexColor("#fef3c7"), borda=LARANJA)
+
+    c.setFillColor(LARANJA); c.setFont("Helvetica-Bold", 10)
+    c.drawString(rx + 0.3 * cm, y - 0.5 * cm, "Trabalho Futuro: Otimizar Threshold")
+    c.setFillColor(CINZA_ESCURO); c.setFont("Helvetica", 9)
+    itens_roi = [
+        "Threshold padrão = 0.5",
+        "Reduzir threshold → mais FN detectados",
+        "Custo: mais FP (auditorias extras)",
+        "src/avaliacao/metricas.py: otimizar_threshold()",
+        "Sem re-treinamento — calibração no val",
+    ]
+    yr = y - 1.0 * cm
+    for item in itens_roi:
+        c.drawString(rx + 0.3 * cm, yr, f"→  {item}")
+        yr -= 0.45 * cm
+
+    c.showPage()
+
+
+def slide_lora(c: canvas.Canvas) -> None:
+    """Slide 13 — Aula 08: PEFT/LoRA para K-Fold viável."""
+    _fundo_padrao(c)
+    _titulo_barra(c, "Aula 08 — PEFT/LoRA: K-Fold Viável no Colab T4")
+    _numero_slide(c, 13)
+
+    y = H - 2.8 * cm
+
+    # Problema
+    _secao_tag(c, "O PROBLEMA: POR QUE K-FOLD É INVIÁVEL COM FULL FINE-TUNING?", MARGIN, y, VERMELHO)
+    y -= 0.8 * cm
+
+    _caixa(c, MARGIN, y - 1.2 * cm, W - 2 * MARGIN, 1.2 * cm,
+           bg=colors.HexColor("#fee2e2"), borda=VERMELHO)
+    c.setFillColor(VERMELHO); c.setFont("Helvetica-Bold", 9)
+    c.drawString(MARGIN + 0.3 * cm, y - 0.4 * cm,
+                 "Full Fine-Tuning: 110M parâmetros × 5 épocas × 5 folds = custo proibitivo no T4")
+    c.setFillColor(CINZA_ESCURO); c.setFont("Helvetica", 8)
+    c.drawString(MARGIN + 0.3 * cm, y - 0.8 * cm,
+                 "Resultado: K-Fold para o Transformer não executado → variância amostral com ~80 amostras de teste")
+    y -= 1.8 * cm
+
+    # Dois painéis lado a lado
+    pw = (W - 3 * MARGIN) / 2
+
+    # Painel Full FT (problema)
+    _caixa(c, MARGIN, y - 4.0 * cm, pw, 4.0 * cm, bg=AZUL_CLARO, borda=AZUL_MEDIO)
+    _secao_tag(c, "FULL FINE-TUNING", MARGIN + 0.2 * cm, y - 0.1 * cm, AZUL_MEDIO)
+    c.setFillColor(AZUL_ESCURO); c.setFont("Helvetica-Bold", 22)
+    c.drawString(MARGIN + 0.3 * cm, y - 1.0 * cm, "110M")
+    c.setFont("Helvetica", 9); c.setFillColor(CINZA_ESCURO)
+    c.drawString(MARGIN + 0.3 * cm, y - 1.45 * cm, "parâmetros treináveis")
+    c.setFont("Helvetica", 9)
+    for i, item in enumerate([
+        "Atualiza TODOS os pesos do BERT",
+        "5 folds = 5× tempo de treino",
+        "Memória GPU: elevada",
+        "K-Fold: inviável no T4",
+    ]):
+        c.drawString(MARGIN + 0.3 * cm, y - 2.1 * cm - i * 0.4 * cm, f"✗  {item}")
+
+    # Seta
+    c.setFillColor(VERDE); c.setFont("Helvetica-Bold", 18)
+    c.drawCentredString(W / 2, y - 2.0 * cm, "→ LoRA")
+    c.setFillColor(CINZA_ESCURO); c.setFont("Helvetica", 8)
+    c.drawCentredString(W / 2, y - 2.45 * cm, "Hu et al., 2022")
+
+    # Painel LoRA (solução)
+    rx = MARGIN + pw + MARGIN
+    _caixa(c, rx, y - 4.0 * cm, pw, 4.0 * cm,
+           bg=colors.HexColor("#f0fdf4"), borda=VERDE)
+    _secao_tag(c, "LORA (PEFT)", rx + 0.2 * cm, y - 0.1 * cm, VERDE)
+    c.setFillColor(VERDE); c.setFont("Helvetica-Bold", 22)
+    c.drawString(rx + 0.3 * cm, y - 1.0 * cm, "~300K")
+    c.setFont("Helvetica", 9); c.setFillColor(CINZA_ESCURO)
+    c.drawString(rx + 0.3 * cm, y - 1.45 * cm, "parâmetros treináveis (−99.7%)")
+    for i, item in enumerate([
+        "Congela backbone; treina adaptadores",
+        "Reinicializa só os adaptadores p/ fold",
+        "Memória GPU: backbone carregado 1×",
+        "K-Fold ≈ 1× Full FT em tempo",
+    ]):
+        c.setFillColor(CINZA_ESCURO); c.setFont("Helvetica", 9)
+        c.drawString(rx + 0.3 * cm, y - 2.1 * cm - i * 0.4 * cm, f"✓  {item}")
+
+    y -= 4.6 * cm
+
+    # Código
+    _secao_tag(c, "CÓDIGO — src/modelos/transformer.py: kfold_com_lora()", MARGIN, y, AZUL_MEDIO)
+    y -= 0.65 * cm
+
+    codigo = [
+        "from src.modelos.transformer import kfold_com_lora",
+        "",
+        "resultado = kfold_com_lora(",
+        "    X=df['voto_bert'], y=df['label'],",
+        "    lora_r=8,  n_splits=5,  epocas=3,",
+        ")  # → IC 95% do F1-macro sem custo de Full FT × 5",
+    ]
+    _caixa(c, MARGIN, y - len(codigo) * 0.32 * cm - 0.15 * cm,
+           W - 2 * MARGIN, len(codigo) * 0.32 * cm + 0.25 * cm,
+           bg=colors.HexColor("#1e293b"), borda=AZUL_ESCURO, radius=4)
+    for i, linha in enumerate(codigo):
+        cor = colors.HexColor("#64748b") if linha.startswith("#") else colors.HexColor("#e2e8f0")
+        c.setFillColor(cor); c.setFont("Courier", 8)
+        c.drawString(MARGIN + 0.4 * cm, y - i * 0.32 * cm - 0.05 * cm, linha)
+
+    c.showPage()
+
+
 # ── Main ──────────────────────────────────────────────────────────────────────
 
 def gerar_slides(saida: Path = SAIDA) -> Path:
-    """Gera o deck de slides PDF completo."""
+    """Gera o deck de slides PDF completo (14 slides)."""
     saida.parent.mkdir(parents=True, exist_ok=True)
     c = canvas.Canvas(str(saida), pagesize=landscape(A4))
     c.setTitle("Jurimetria Preditiva em Acórdãos do TCU — Saúde e Educação")
@@ -979,10 +1162,12 @@ def gerar_slides(saida: Path = SAIDA) -> Path:
     slide_transformer(c)
     slide_resultados(c)
     slide_lime(c)
+    slide_custo(c)
+    slide_lora(c)
     slide_conclusao(c)
 
     c.save()
-    print(f"Slides gerados: {saida}  ({saida.stat().st_size / 1024:.0f} KB, 12 slides)")
+    print(f"Slides gerados: {saida}  ({saida.stat().st_size / 1024:.0f} KB, 14 slides)")
     return saida
 
 
