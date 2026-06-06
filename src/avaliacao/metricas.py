@@ -174,6 +174,28 @@ def plotar_f1_por_classe(
     return caminho
 
 
+def _fn_predict_proba(pipeline):
+    """Retorna função de probabilidade compatível com LIME.
+
+    Se o pipeline tem predict_proba (LogReg), usa diretamente.
+    Se não (LinearSVC), aplica softmax na decision_function como proxy.
+    """
+    if hasattr(pipeline, "predict_proba"):
+        return pipeline.predict_proba
+
+    def _softmax(textos):
+        scores = pipeline.decision_function(textos)
+        scores = np.atleast_2d(scores)
+        if scores.shape[1] == 1:
+            # Binário: decision_function retorna 1 coluna
+            scores = np.hstack([-scores, scores])
+        scores = scores - scores.max(axis=1, keepdims=True)
+        exp_s = np.exp(scores)
+        return exp_s / exp_s.sum(axis=1, keepdims=True)
+
+    return _softmax
+
+
 def explicar_com_lime(
     pipeline_baseline,
     textos_teste: list[str],
@@ -184,8 +206,8 @@ def explicar_com_lime(
 ) -> Path:
     """Gera plot LIME mostrando tokens mais preditivos de condenação (Irregular).
 
-    Usa o pipeline baseline (TF-IDF + LogReg) para interpretabilidade, pois o
-    LIME requer predições rápidas para gerar perturbações.
+    Funciona com LogisticRegression (predict_proba) e LinearSVC (softmax na
+    decision_function como proxy de probabilidade).
 
     Args:
         pipeline_baseline: Pipeline sklearn treinado (TF-IDF + classificador).
@@ -201,6 +223,7 @@ def explicar_com_lime(
     from lime.lime_text import LimeTextExplainer
 
     FIGURAS.mkdir(parents=True, exist_ok=True)
+    fn_proba = _fn_predict_proba(pipeline_baseline)
     explainer = LimeTextExplainer(class_names=classes)
 
     fig, axes = plt.subplots(num_amostras, 1, figsize=(12, num_amostras * 3))
@@ -210,7 +233,7 @@ def explicar_com_lime(
     for i, texto in enumerate(textos_teste[:num_amostras]):
         exp = explainer.explain_instance(
             texto,
-            pipeline_baseline.predict_proba,
+            fn_proba,
             num_features=num_features,
             labels=[classes.index("Irregular")] if "Irregular" in classes else [0],
         )
