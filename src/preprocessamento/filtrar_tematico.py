@@ -1,14 +1,20 @@
 """Filtro temático e extração de label em acórdãos do TCU."""
 
 import argparse
+import csv
 import logging
 import re
+import sys
 from pathlib import Path
 
 import pandas as pd
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 logger = logging.getLogger(__name__)
+
+# Aumentar limite de campo CSV para suportar textos jurídicos longos (> 128 KB)
+# O CSV real do TCU tem campos sumario/voto que excedem o limite padrão de 131072 bytes.
+csv.field_size_limit(min(sys.maxsize, 2_147_483_647))
 
 DATA_RAW = Path(__file__).resolve().parents[2] / "data" / "raw"
 DATA_INTERIM = Path(__file__).resolve().parents[2] / "data" / "interim"
@@ -51,6 +57,25 @@ _MAPA_LABEL = {
 }
 
 
+def _detectar_separador(arquivo_csv: Path) -> str:
+    """Lê as primeiras linhas do CSV para detectar o separador real.
+
+    O CSV do TCU usa ponto-e-vírgula (;) como separador. Detectar
+    automaticamente evita depender de sep=None + engine='python',
+    que impõe um limite de 131 072 bytes por campo.
+
+    Returns:
+        Separador detectado: ',' ou ';' (padrão ';' se inconclusivo).
+    """
+    try:
+        with open(arquivo_csv, "r", encoding="utf-8", errors="replace") as f:
+            amostra = f.read(4096)
+        dialect = csv.Sniffer().sniff(amostra, delimiters=",;|\t")
+        return dialect.delimiter
+    except csv.Error:
+        return ";"
+
+
 def inspecionar_colunas(arquivo_csv: Path) -> list[str]:
     """Lê apenas o cabeçalho do CSV para identificar colunas disponíveis.
 
@@ -60,9 +85,12 @@ def inspecionar_colunas(arquivo_csv: Path) -> list[str]:
     Returns:
         Lista de nomes de colunas.
     """
-    df_cabecalho = pd.read_csv(arquivo_csv, nrows=0, encoding="utf-8", sep=None, engine="python")
+    sep = _detectar_separador(arquivo_csv)
+    df_cabecalho = pd.read_csv(
+        arquivo_csv, nrows=0, encoding="utf-8", sep=sep, engine="c"
+    )
     colunas = df_cabecalho.columns.tolist()
-    logger.info("Colunas encontradas (%d): %s", len(colunas), colunas)
+    logger.info("Colunas encontradas (%d) | sep=%r: %s", len(colunas), sep, colunas)
     return colunas
 
 
@@ -139,13 +167,15 @@ def filtrar_acordaos(arquivo_csv: Path, col_texto: str = "sumario") -> pd.DataFr
         if col_extra in colunas_disponiveis:
             usecols.append(col_extra)
 
-    logger.info("Carregando colunas: %s", usecols)
+    sep = _detectar_separador(arquivo_csv)
+    logger.info("Carregando colunas (sep=%r): %s", sep, usecols)
     df = pd.read_csv(
         arquivo_csv,
         usecols=usecols,
         encoding="utf-8",
-        sep=None,
-        engine="python",
+        sep=sep,
+        engine="c",          # engine C não tem limite de tamanho de campo
+        on_bad_lines="warn", # registrar linhas malformadas sem parar
     )
     logger.info("Carregados %d acórdãos do arquivo %s.", len(df), arquivo_csv.name)
     logger.info("Uso de memória: %.1f MB", df.memory_usage(deep=True).sum() / 1e6)
