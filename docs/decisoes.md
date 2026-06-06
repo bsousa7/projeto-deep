@@ -65,28 +65,60 @@
 
 ## D-05 — Campo de label usado
 
-**Data:** 05/06/2026
+**Data:** 05/06/2026 | **Atualizada:** 06/06/2026 (inspeção do CSV real)
 **Decisão:** Qual campo do CSV usar como rótulo de desfecho?
 **Alternativas:**
-- A) Campo `tipo` (contém apenas "Acórdão" — sem discriminação de desfecho)
-- B) **Campo `situacao`** (contém "Irregular", "Regular com Ressalva", "Regular")
-- C) Regex no `sumario` (fallback — cobertura parcial)
+- A) Campo `TIPO` — contém "Acórdão" (tipo do documento, sem discriminação de desfecho)
+- B) Campo `SITUACAO` — candidato; valores reais precisam ser verificados na amostra
+- C) **Regex no campo `ACORDAO`** — dispositivo estruturado com texto da decisão
+- D) Regex no campo `SUMARIO` — fallback com cobertura parcial
 
-**Escolha:** **Campo `situacao` (opção B)**
-**Motivo:** Inspeção do CSV (Etapa 2) confirmou que `situacao` contém o desfecho estruturado com 100% de preenchimento. O campo `tipo` contém apenas "Acórdão" (sem discriminação). O filtro `filtrar_tematico.py` prioriza `situacao`, com fallback automático para regex no `sumario`.
+**Escolha:** **Regex no campo `ACORDAO` com fallback para `SUMARIO` (opções C/D)**
+**Motivo:** Inspeção do CSV real do TCU (06/06/2026) revelou que o campo `SITUACAO` contém
+o status processual (ex.: "BAIXADO", "EM TRAMITAÇÃO"), não o desfecho da auditoria.
+O dispositivo da decisão ("contas irregulares", "contas regulares") consta no campo
+`ACORDAO` (coluna 23) e/ou no `SUMARIO` (coluna 22). A função `_extrair_label()` em
+`filtrar_tematico.py` tenta `tipo` → `situacao` → regex em `acordao` → regex em `sumario`.
 
 ---
 
 ## D-06 — Campo de texto para o Transformer
 
-**Data:** 05/06/2026
+**Data:** 05/06/2026 | **Atualizada:** 06/06/2026 (inspeção do CSV real)
 **Decisão:** Qual campo de texto usar como entrada do LegalBert-pt?
 **Alternativas:**
-- A) **Campo `sumario`** — disponível no CSV, cobre 100% dos registros, MVP válido
-- B) Campo `voto` extraído de PDF via `pdfplumber` — mais discriminativo, maior custo operacional
+- A) Campo `SUMARIO` — resumo curto, disponível no CSV, MVP válido
+- B) Campo `VOTO` extraído de PDF via pdfplumber — mais discriminativo, alto custo
+- C) **Campo `VOTO` direto do CSV** — disponível na coluna 29 do CSV real do TCU!
 
-**Escolha:** **Campo `sumario` (opção A) — MVP**
-**Motivo:** O CSV do TCU não inclui o texto integral do Voto como coluna estruturada. Extrair o `voto` via `pdfplumber` exigiria baixar individualmente os PDFs de 2.000–4.000 acórdãos filtrados (~8–16 GB), inviável no prazo atual. O `sumario` é suficiente para o MVP. A extração de PDFs pode ser implementada como extensão futura (Estágio 2b).
+**Escolha:** **Campo `VOTO` do CSV (opção C) — sem necessidade de PDFs**
+**Motivo:** A inspeção do CSV real do TCU (06/06/2026) revelou que o campo `VOTO`
+(coluna 29) está disponível diretamente no arquivo CSV, contendo o texto integral do
+Voto do Ministro. Isso elimina a necessidade de baixar PDFs separados e permite usar
+o campo mais discriminativo para classificação sem custo adicional.
+Pipeline atualizado: baseline usa `SUMARIO`; Transformer usa `VOTO`.
+
+---
+
+## D-07 — Estrutura real do CSV do TCU
+
+**Data:** 06/06/2026
+**Observação:** Inspeção do arquivo `acordao-completo-2023.csv` (445 MB) revelou:
+
+| Característica | Valor |
+|---|---|
+| Separador | pipe (`\|`) |
+| Encoding | UTF-8 (sem BOM) |
+| Total de colunas | 33 |
+| Nomes de colunas | MAIÚSCULO, sem acentos |
+| Coluna identificador | `NUMACORDAO` (não `NUMEROACORDAO`) |
+| Coluna de texto curto | `SUMARIO` (coluna 22) |
+| Coluna de texto longo | `VOTO` (coluna 29) — disponível diretamente! |
+| Coluna de palavras-chave | `ASSUNTO` (coluna 21) — útil para filtro temático |
+| Coluna do dispositivo | `ACORDAO` (coluna 23) — fonte para extração de label |
+
+O mapeamento correto (`NUMACORDAO` → `numeroAcordao` etc.) está documentado em
+`_MAPA_COLUNAS_NORM` em `src/preprocessamento/filtrar_tematico.py`.
 
 ---
 
