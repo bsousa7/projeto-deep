@@ -25,3 +25,11 @@ SOUZA, Fábio; NOGUEIRA, Rodrigo; LOTUFO, Roberto. **BERTimbau: Pretrained BERT 
 DOMINGUES, Luciano. **legal-bert-base-cased-ptbr: BERT model pre-trained on Brazilian legal corpus**. HuggingFace Hub, 2022. Disponível em: <https://huggingface.co/dominguesm/legal-bert-base-cased-ptbr>. Acesso em: 05 jun. 2026.
 
 SUN, Chi; QIU, Xipeng; XU, Yuanbin; HUANG, Xuanjing. **How to Fine-Tune BERT for Text Classification?** In: CHINESE COMPUTATIONAL LINGUISTICS, 18., 2019, Kunming. *Proceedings...* Cham: Springer, 2019. p. 194–206.
+
+PEDREGOSA, Fabian et al. **Scikit-learn: machine learning in Python.** *Journal of Machine Learning Research*, Cambridge, v. 12, p. 2825–2830, 2011.
+
+RIBEIRO, Marco Tulio; SINGH, Sameer; GUESTRIN, Carlos. **"Why should I trust you?": explaining the predictions of any classifier.** In: ACM SIGKDD INTERNATIONAL CONFERENCE ON KNOWLEDGE DISCOVERY AND DATA MINING, 22., 2016, San Francisco. *Proceedings…* New York: ACM, 2016. p. 1135–1144.
+
+WOLF, Thomas et al. **Transformers: state-of-the-art natural language processing.** In: CONFERENCE ON EMPIRICAL METHODS IN NATURAL LANGUAGE PROCESSING: SYSTEM DEMONSTRATIONS, 2020, online. *Proceedings…* Stroudsburg: ACL, 2020. p. 38–45.
+
+LAGE-FREITAS, André et al. **Predicting Brazilian court decisions.** *PeerJ Computer Science*, [s.l.], v. 8, e904, 2022.
